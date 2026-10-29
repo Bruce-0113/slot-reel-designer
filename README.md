@@ -66,6 +66,7 @@ pytest
 ├── README.zh-TW.md
 ├── docs/
 │   ├── problem.md            # problem statement
+│   ├── problem.zh-TW.md      # Traditional Chinese version
 │   ├── slot-game-primer.md   # background on slot-game mechanics
 │   ├── slot-game-primer.zh-TW.md  # Traditional Chinese version
 │   ├── methodology.md        # derivation and search method

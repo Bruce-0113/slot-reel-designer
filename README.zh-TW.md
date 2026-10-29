@@ -13,7 +13,7 @@
 - 5 種中獎型態：4 個 2×2 方塊（payout = `押注 × 倍率`），以及全盤（payout = `押注 × 倍率 × 5`）
 - 目標：**RTP = 0.95**，且 **勝率 ≥ 55%**
 
-完整敘述：[`docs/problem.md`](docs/problem.md)
+完整敘述：[`docs/problem.zh-TW.md`](docs/problem.zh-TW.md)
 
 ## 假設
 
@@ -63,7 +63,8 @@ pytest
 ├── README.md
 ├── README.zh-TW.md
 ├── docs/
-│   ├── problem.md                 # 問題敘述
+│   ├── problem.md                 # 問題敘述（英文）
+│   ├── problem.zh-TW.md           # 問題敘述（繁體中文）
 │   ├── slot-game-primer.md        # slot game 機制說明（英文）
 │   ├── slot-game-primer.zh-TW.md  # slot game 機制說明（繁體中文）
 │   ├── methodology.md             # 推導與搜尋方法
