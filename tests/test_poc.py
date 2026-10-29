@@ -1,6 +1,7 @@
 """Tests for the proof-of-concept reel family and its saved configuration."""
 
 import json
+from dataclasses import replace
 from fractions import Fraction
 
 import pytest
@@ -65,6 +66,30 @@ def family_hit_rate(l1: int, k1: int, l3: int, k3: int) -> Fraction:
 
 
 STRIP_SIZES = [(k, n) for n in range(1, 13) for k in range(1, n + 1)]  # (zeros, length)
+
+# Every (L1, k1, L3, k3) that scan(40) returns, in order (docs/poc.md).
+SCAN_40 = {
+    SUM_ALL: [
+        (5, 4, 10, 8),
+        (10, 6, 15, 12),
+        (10, 5, 17, 16),
+        (15, 9, 15, 11),
+        (15, 11, 15, 9),
+        (10, 5, 24, 22),
+        (15, 7, 19, 17),
+        (5, 4, 30, 21),
+        (10, 6, 25, 19),
+        (10, 7, 25, 16),
+        (6, 5, 30, 18),
+    ],
+    FULL_ONLY: [(10, 9, 23, 20), (15, 12, 18, 17)],
+}
+
+
+def mirrored(params: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """The parameters of the left-right mirror image."""
+    l1, k1, l3, k3 = params
+    return l3, k3, l1, k1
 
 
 class TestZeroRunStrip:
@@ -169,6 +194,38 @@ class TestScan:
         assert meets_targets(ev)
         assert not meets_targets(evaluate(build_reels(5, 3, 10, 8)))
         assert not meets_targets(evaluate(build_reels(5, 4, 10, 8), FULL_ONLY))
+
+    def test_meets_targets_hit_rate_boundary(self):
+        ev = evaluate(build_reels(5, 4, 10, 8))
+        assert meets_targets(replace(ev, hit_rate=Fraction(11, 20)))
+        assert not meets_targets(replace(ev, hit_rate=Fraction(1, 2)))
+        assert not meets_targets(replace(ev, hit_rate=Fraction(10999, 20000)))
+
+    @pytest.mark.parametrize("mode", [SUM_ALL, FULL_ONLY])
+    def test_pinned_scan_40_matches_closed_form(self, mode):
+        """The pinned lists follow from the closed forms in docs/poc.md (a fast stand-in)."""
+        found = [
+            (l1, k1, l3, k3)
+            for l1 in range(3, 19)
+            for l3 in range(l1, 38 - l1)
+            for k1 in range(2, l1)
+            for k3 in range(2, l3)
+            if family_rtp(l1, k1, l3, k3, mode) == TARGET_RTP
+            and family_hit_rate(l1, k1, l3, k3) >= MIN_HIT_RATE
+        ]
+        assert sorted(found, key=lambda p: (p[0] + p[2], p)) == SCAN_40[mode]
+
+    def test_pinned_scan_40_up_to_mirroring(self):
+        """11 sum_all solutions with L1 <= L3, 10 up to mirroring; 2 for full_only."""
+        assert len(SCAN_40[SUM_ALL]) == 11
+        assert len({min(p, mirrored(p)) for p in SCAN_40[SUM_ALL]}) == 10
+        assert len({min(p, mirrored(p)) for p in SCAN_40[FULL_ONLY]}) == 2
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("mode", [SUM_ALL, FULL_ONLY])
+    def test_scan_40(self, mode):
+        """scan(40) itself (about 4 s per mode), the source of docs/poc.md's counts."""
+        assert [s.params for s in scan(40, mode)] == SCAN_40[mode]
 
 
 @pytest.fixture(scope="module")

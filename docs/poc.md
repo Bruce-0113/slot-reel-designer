@@ -40,8 +40,10 @@ hit rate        = 1 - (1 - k1/L1)(1 - k3/L3)
 
 `scan(max_total, mode)` tries every `L1 <= L3`, `2 <= k < L` with `L1 + L2 + L3 <= max_total`. Mirroring the reels left to right gives the same statistics, so only `L1 <= L3` is scanned. It keeps the candidates where `RTP == 19/20` (exact `Fraction`) and `hit rate >= 11/20`, sorted by total length. With `max_total = 40`:
 
-- `sum_all`: 11 solutions. The smallest has total length 18 and is the only one at that length, up to mirroring. The next shortest has total length 28.
-- `full_only`: 2 solutions, both with total length 36. Nothing shorter exists in this family.
+- `sum_all`: 11 solutions with L1 <= L3 (10 up to mirroring: `(L1, k1, L3, k3) = (15, 9, 15, 11)` and `(15, 11, 15, 9)` are mirror images). The smallest has total length 18 and is the only one at that length, up to mirroring. The next shortest has total length 28.
+- `full_only`: 2 solutions with L1 <= L3, both with total length 36. Nothing shorter exists in this family.
+
+`tests/test_poc.py` pins both solution lists.
 
 ## Chosen configuration (sum_all)
 

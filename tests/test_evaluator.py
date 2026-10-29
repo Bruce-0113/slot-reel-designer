@@ -46,6 +46,9 @@ class TestWindowCounts:
     def test_two_symbol_reel_wraps(self):
         assert window_counts([1, 2]) == {(1, 2, 1): 1, (2, 1, 2): 1}
 
+    def test_three_symbol_reel_rotates(self):
+        assert window_counts([0, 1, 2]) == {(0, 1, 2): 1, (1, 2, 0): 1, (2, 0, 1): 1}
+
     def test_counts_every_stop(self):
         assert window_counts([0, 0, 1, 0]) == {
             (0, 0, 1): 1,
