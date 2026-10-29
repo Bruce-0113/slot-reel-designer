@@ -28,6 +28,7 @@ from slot_reel_designer.search import (
     config_json,
     count_reels,
     evaluate_counts,
+    load_config,
     search,
     symbol_hit_prob,
     to_config,
@@ -138,6 +139,31 @@ def evaluation(config) -> Evaluation:
 def test_config_files():
     assert CONFIG_PATHS[SUM_ALL].name == "reels.json"
     assert CONFIG_PATHS[FULL_ONLY].name == "reels_full_only.json"
+
+
+def test_load_config(mode, config):
+    reels = tuple(tuple(reel) for reel in config["reels"])
+    assert load_config(CONFIG_PATHS[mode]) == (mode, reels)
+    assert load_config(str(CONFIG_PATHS[mode])) == (mode, reels)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not json",
+        "[1, 2]",
+        '{"mode": "sum_all"}',
+        '{"reels": [[0], [1], [2]]}',
+        '{"mode": "both", "reels": [[0], [1], [2]]}',
+        '{"mode": "sum_all", "reels": [[0], [1]]}',
+        '{"mode": "sum_all", "reels": [[0], [1], [5]]}',
+    ],
+)
+def test_load_config_rejects_malformed_files(tmp_path, content):
+    path = tmp_path / "bad.json"
+    path.write_text(content)
+    with pytest.raises(ValueError):
+        load_config(path)
 
 
 class TestSavedConfig:

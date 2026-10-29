@@ -873,6 +873,17 @@ def config_json(result: SearchResult) -> str:
     return _NUMBER_LIST.sub(one_line, json.dumps(to_config(result), indent=2)) + "\n"
 
 
+def load_config(path: Path | str) -> tuple[PayoutMode, Reels]:
+    """Read a saved config's payout mode and validated reels.
+
+    Raises OSError if the file cannot be read and ValueError if it is malformed.
+    """
+    data = json.loads(Path(path).read_text())
+    if not isinstance(data, dict) or not {"mode", "reels"} <= data.keys():
+        raise ValueError(f"{path}: expected a JSON object with 'mode' and 'reels'")
+    return PayoutMode(data["mode"]), validate_reels(data["reels"])
+
+
 def _exact(value: Fraction) -> str:
     """A fraction with its decimal value."""
     return f"{value} = {float(value):.6f}"
