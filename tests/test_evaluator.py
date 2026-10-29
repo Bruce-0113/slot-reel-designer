@@ -2,8 +2,10 @@
 
 import random
 import time
+from collections import Counter
 from dataclasses import fields
 from fractions import Fraction
+from itertools import product
 from math import prod
 
 import pytest
@@ -12,9 +14,20 @@ from slot_reel_designer.evaluator import (
     Evaluation,
     evaluate,
     evaluate_bruteforce,
+    outcome_counts,
+    payout_distribution,
+    payout_variance,
     window_counts,
 )
-from slot_reel_designer.game import FULL_SCREEN_FACTOR, MULTIPLIERS, PATTERNS, PayoutMode
+from slot_reel_designer.game import (
+    FULL_SCREEN_FACTOR,
+    MULTIPLIERS,
+    PATTERNS,
+    PayoutMode,
+    evaluate_grid,
+    pattern_hits,
+    window,
+)
 
 SUM_ALL = PayoutMode.SUM_ALL
 FULL_ONLY = PayoutMode.FULL_ONLY
@@ -246,3 +259,83 @@ def test_long_reels_are_exact_and_fast(mode):
     assert ev.rtp == linear_rtp(reels, mode)
     assert_consistent(ev)
     assert elapsed < 2.0, f"evaluate took {elapsed:.2f}s"
+
+
+def all_stops(reels):
+    """Every stop combination of ``reels``."""
+    return product(*(range(len(reel)) for reel in reels))
+
+
+def bruteforce_distribution(reels, mode: PayoutMode) -> dict[Fraction, Fraction]:
+    """P(payout == v) from scoring every stop combination with ``evaluate_grid``."""
+    payouts = Counter(evaluate_grid(window(reels, stops), mode)[0] for stops in all_stops(reels))
+    total = payouts.total()
+    return {value: Fraction(n, total) for value, n in sorted(payouts.items())}
+
+
+class TestPayoutDistribution:
+    ALL_ZERO = TestHandComputed.ALL_ZERO
+    MIXED = TestHandComputed.MIXED
+
+    def test_all_zero(self):
+        assert payout_distribution(self.ALL_ZERO, SUM_ALL) == {Fraction(9, 4): 1}
+        assert payout_distribution(self.ALL_ZERO, FULL_ONLY) == {Fraction(5, 4): 1}
+        assert payout_variance({Fraction(9, 4): Fraction(1)}) == 0
+
+    @pytest.mark.parametrize(
+        ("mode", "full_screen"), [(SUM_ALL, Fraction(99, 20)), (FULL_ONLY, Fraction(11, 4))]
+    )
+    def test_mixed_reels(self, mode, full_screen):
+        # From the block counts in TestHandComputed: left blocks 2, 1, 0, 1 per s1 and
+        # right blocks 2, 1, 0, 0, 1 per s3, each paying m = 11/20; (s1, s3) = (0, 0)
+        # is the full screen. P(0, 1, 2, 3 blocks) = 2, 6, 7, 4 out of 20.
+        assert payout_distribution(self.MIXED, mode) == {
+            Fraction(0): Fraction(1, 10),
+            Fraction(11, 20): Fraction(3, 10),
+            Fraction(11, 10): Fraction(7, 20),
+            Fraction(33, 20): Fraction(1, 5),
+            full_screen: Fraction(1, 20),
+        }
+
+    def test_no_hits(self):
+        assert payout_distribution(([0, 1], [2, 3], [4])) == {Fraction(0): 1}
+
+    def test_variance(self):
+        half = Fraction(1, 2)
+        assert payout_variance({Fraction(0): half, Fraction(2): half}) == 1
+        assert payout_variance({Fraction(1, 4): Fraction(1)}) == 0
+        with pytest.raises(ValueError):
+            payout_variance({Fraction(0): half})
+
+    @pytest.mark.parametrize("reels", [([0], [1]), ([0], [], [1]), ([0], [1], [7])])
+    def test_rejects_invalid_reels(self, reels):
+        with pytest.raises(ValueError):
+            payout_distribution(reels)
+        with pytest.raises(ValueError):
+            outcome_counts(reels)
+
+
+@pytest.mark.parametrize("seed", SEEDS)
+def test_outcome_counts_match_bruteforce(seed):
+    reels = random_reels(seed)
+    expected = Counter(tuple(pattern_hits(window(reels, s)).items()) for s in all_stops(reels))
+    assert outcome_counts(reels) == expected
+
+
+@pytest.mark.parametrize("mode", list(PayoutMode))
+@pytest.mark.parametrize("seed", SEEDS)
+def test_payout_distribution_matches_bruteforce(seed, mode):
+    reels = random_reels(seed)
+    dist = payout_distribution(reels, mode)
+    assert dist == bruteforce_distribution(reels, mode)
+    assert list(dist) == sorted(dist)
+    assert all(p > 0 for p in dist.values())
+    ev = evaluate(reels, mode)
+    assert sum(dist.values()) == 1
+    assert sum(value * p for value, p in dist.items()) == ev.rtp
+    assert sum(p for value, p in dist.items() if value > 0) == ev.hit_rate
+    assert sum(p for value, p in dist.items() if value > 1) == ev.win_rate_above_bet
+    stops = list(all_stops(reels))
+    payouts = [evaluate_grid(window(reels, s), mode)[0] for s in stops]
+    variance = sum((x - ev.rtp) ** 2 for x in payouts) / len(stops)
+    assert payout_variance(dist) == variance

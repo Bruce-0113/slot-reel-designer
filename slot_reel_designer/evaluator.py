@@ -6,7 +6,7 @@ Every statistic is an exact ``Fraction``; no floating point is involved.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from fractions import Fraction
 from itertools import product
@@ -62,6 +62,15 @@ def evaluate(
     are merged into one blank column carrying their total count. That keeps
     the work to at most 125 x 10 x 10 grids, however long the reels are.
     """
+    return _summarize(outcome_counts(reels), mode)
+
+
+def outcome_counts(reels: Sequence[Sequence[int]]) -> Counter[HitKey]:
+    """Number of stop combinations behind each set of (pattern, symbol) hits.
+
+    Uses the window enumeration of ``evaluate``. The counts total
+    L1 * L2 * L3, and the empty key holds the spins on which nothing hits.
+    """
     strips = validate_reels(reels)
     left, middle, right = (window_counts(strip) for strip in strips)
     outcomes: Counter[HitKey] = Counter()
@@ -71,7 +80,27 @@ def evaluate(
         ):
             grid = tuple(zip(left_col, mid, right_col))
             outcomes[tuple(pattern_hits(grid).items())] += left_count * mid_count * right_count
-    return _summarize(outcomes, mode)
+    return outcomes
+
+
+def payout_distribution(
+    reels: Sequence[Sequence[int]], mode: PayoutMode | str = PayoutMode.SUM_ALL
+) -> dict[Fraction, Fraction]:
+    """Exact P(payout == v) for every payout v that occurs, in increasing order of v."""
+    outcomes = outcome_counts(reels)
+    by_payout: Counter[Fraction] = Counter()
+    for key, count in outcomes.items():
+        by_payout[sum(pattern_payouts(dict(key), mode).values(), Fraction(0))] += count
+    total = outcomes.total()
+    return {value: Fraction(count, total) for value, count in sorted(by_payout.items())}
+
+
+def payout_variance(distribution: Mapping[Fraction, Fraction]) -> Fraction:
+    """Exact variance of the payout per spin, from a ``payout_distribution``."""
+    if sum(distribution.values()) != 1:
+        raise ValueError("probabilities must sum to 1")
+    mean = sum((value * p for value, p in distribution.items()), Fraction(0))
+    return sum(((value - mean) ** 2 * p for value, p in distribution.items()), Fraction(0))
 
 
 def evaluate_bruteforce(
