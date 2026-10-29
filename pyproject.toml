@@ -1,0 +1,9 @@
+[project]
+name = "slot-reel-designer"
+version = "0.1.0"
+description = "Design 3x3 slot reel strips with an exact RTP of 0.95 and a hit frequency of at least 55%."
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
