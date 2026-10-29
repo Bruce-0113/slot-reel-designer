@@ -45,6 +45,7 @@ from __future__ import annotations
 import json
 import math
 import random
+import re
 import time
 from collections import Counter, defaultdict
 from collections.abc import Sequence
@@ -860,6 +861,18 @@ def to_config(result: SearchResult) -> dict[str, Any]:
     }
 
 
+_NUMBER_LIST = re.compile(r"\[\s+(-?\d+(?:,\s+-?\d+)*)\s+\]")  # as json.dumps indents it
+
+
+def config_json(result: SearchResult) -> str:
+    """The saved config text: indented JSON with each list of numbers (a reel) on one line."""
+
+    def one_line(match: re.Match[str]) -> str:
+        return "[" + ", ".join(re.split(r",\s+", match[1])) + "]"
+
+    return _NUMBER_LIST.sub(one_line, json.dumps(to_config(result), indent=2)) + "\n"
+
+
 def _exact(value: Fraction) -> str:
     """A fraction with its decimal value."""
     return f"{value} = {float(value):.6f}"
@@ -912,7 +925,7 @@ def main(seed: int = DEFAULT_SEED) -> None:
         if result.violations:
             raise SystemExit(f"{mode}: hard requirements broken; nothing saved")
         path.parent.mkdir(exist_ok=True)
-        path.write_text(json.dumps(to_config(result), indent=2) + "\n")
+        path.write_text(config_json(result))
         print(f"  saved {path}")
 
 

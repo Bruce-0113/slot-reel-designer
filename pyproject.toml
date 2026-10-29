@@ -7,3 +7,5 @@ dependencies = ["numpy>=1.26"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: long checks (search reruns, brute force); run them with `pytest -m slow`"]
+addopts = "-m 'not slow'"

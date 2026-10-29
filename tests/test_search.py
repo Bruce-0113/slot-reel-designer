@@ -1,5 +1,6 @@
 """Tests for the reel search: count model, strip builder, search, exact finish and checks."""
 
+import json
 import random
 from collections import Counter
 from dataclasses import replace
@@ -27,6 +28,7 @@ from slot_reel_designer.search import (
     build_strip,
     check_preferences,
     check_requirements,
+    config_json,
     count_reels,
     describe,
     evaluate_counts,
@@ -436,6 +438,15 @@ class TestSearch:
         assert config["rtp"] == "19/20"
         assert config["lengths"] == [len(reel) for reel in quick.reels]
         assert config["seed"] == 7
+
+    def test_config_json(self, quick):
+        text = config_json(quick)
+        assert json.loads(text) == to_config(quick)
+        assert text.endswith("}\n")
+        reel_lines = [line for line in text.splitlines() if line.startswith("    [")]
+        reels = [json.loads(line.strip().rstrip(",")) for line in reel_lines]
+        assert reels == to_config(quick)["reels"]
+        assert not any(line.strip().rstrip(",").isdigit() for line in text.splitlines())
 
     def test_describe(self, quick):
         text = describe(quick)
