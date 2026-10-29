@@ -1,31 +1,48 @@
-"""Tests for the count model and the strip builder of the reel search."""
+"""Tests for the reel search: count model, strip builder, search, exact finish and checks."""
 
 import random
 from collections import Counter
+from dataclasses import replace
 from fractions import Fraction
 from itertools import groupby, product
 
 import pytest
 
 from slot_reel_designer.evaluator import evaluate, evaluate_bruteforce
-from slot_reel_designer.game import SYMBOLS, PayoutMode, pattern_hits, window
+from slot_reel_designer.game import PATTERNS, SYMBOLS, PayoutMode, pattern_hits, window
 from slot_reel_designer.search import (
+    EXTRA_SHIFT,
+    OBJECTIVES,
     PAY,
     PAY_SCALE,
+    RUN_SHIFT,
+    SINGLE_SHIFT,
+    TARGET_RTP,
+    Objective,
     ReelCounts,
     ReelSpec,
     _alternating_fill,
     _cyclic_order,
+    anneal,
     build_strip,
+    check_preferences,
+    check_requirements,
     count_reels,
+    describe,
     evaluate_counts,
+    exact_finish,
+    excess_coefficients,
     fast_stats,
     full_screen_weight,
+    in_domain,
     reel_states,
+    rtp_excess,
     rtp_numerator,
+    search,
     strip_counts,
     symbol_hit_numerators,
     symbol_hit_prob,
+    to_config,
 )
 
 SUM_ALL = PayoutMode.SUM_ALL
@@ -256,3 +273,293 @@ def test_item_orders_never_repeat_a_symbol(order):
             out = order(list(counts))
             assert Counter(out) == dict(enumerate(counts))
             assert all(out[i] != out[i - 1] for i in range(len(out))), counts
+
+
+# Three equal reels: one run of 37 zeros, one run of 3 of every other symbol, 2 singletons.
+# RTP (sum_all) is about 0.961, a little above the target.
+SMALL = ReelSpec((1, 1, 1, 1, 1), (35, 1, 1, 1, 1), 2)
+
+
+def pivot_of(start, specs) -> int | None:
+    """The reel the finish varied: the others keep their runs and move few singletons."""
+    for p in range(3):
+        others_kept = all(
+            specs[i].runs == start[i].runs
+            and specs[i].extra == start[i].extra
+            and abs(specs[i].singles - start[i].singles) <= SINGLE_SHIFT
+            for i in range(3)
+            if i != p
+        )
+        runs_near = all(abs(a - b) <= RUN_SHIFT for a, b in zip(specs[p].runs, start[p].runs))
+        extra_near = all(
+            abs(a - b) <= EXTRA_SHIFT[b >= 10] for a, b in zip(specs[p].extra, start[p].extra)
+        )
+        if others_kept and runs_near and extra_near:
+            return p
+    return None
+
+
+class TestDomain:
+    def test_in_domain(self):
+        assert in_domain(SMALL)
+        assert not in_domain(ReelSpec((1, 1, 1, 1, 0), (35, 1, 1, 1, 0), 2))  # no run of 4s
+        assert not in_domain(ReelSpec((1, 1, 1, 1, 1), (35, 1, 1, 1, 0), 2))  # no 4, 4, 4
+        assert in_domain(ReelSpec((1, 1, 1, 1, 1), (135, 1, 1, 1, 1), 1))  # 150 symbols
+        assert not in_domain(ReelSpec((1, 1, 1, 1, 1), (135, 1, 1, 1, 1), 2))  # 151 symbols
+        assert not in_domain(ReelSpec((1, 1, 1, 1, 1), (35, 1, 1, 1, 1), -1))
+
+    def test_domain_reels_meet_h3_to_h5(self):
+        reels = [build_strip(SMALL)] * 3
+        ev = evaluate(reels)
+        assert [v for v in check_requirements(ev, reels) if not v.startswith("H1")] == []
+        assert check_preferences(ev, reels)[0].startswith("S1")  # equal reels: equal odds
+
+
+class TestObjective:
+    def test_rtp_term(self):
+        obj = Objective()
+        hits, lengths = [0.5, 0.1, 0.05, 0.02, 0.01], [100, 100, 100]
+        on_target = obj.penalty(0.95, 0.6, hits, lengths)
+        assert obj.penalty(0.96, 0.6, hits, lengths) == pytest.approx(on_target + 10)
+        assert obj.penalty(0.96, 0.6, hits, lengths, with_rtp=False) == pytest.approx(on_target)
+
+    def test_priorities(self):
+        obj = Objective()
+        hits, lengths = [0.5, 0.1, 0.05, 0.02, 0.01], [100, 100, 100]
+        base = obj.penalty(0.95, 0.6, hits, lengths)
+        inverted = obj.penalty(0.95, 0.6, [0.5, 0.1, 0.05, 0.01, 0.02], lengths)
+        too_high = obj.penalty(0.95, 0.75, hits, lengths)
+        too_low = obj.penalty(0.95, 0.54, hits, lengths)
+        longer = obj.penalty(0.95, 0.6, hits, [150, 150, 150])
+        # Longer reels cost least, then leaving the S3 band; H2 and S1 breaches cost most.
+        assert base < longer < too_high < min(inverted, too_low)
+
+    def test_full_only_drops_smoothness(self):
+        assert OBJECTIVES[SUM_ALL].w_smooth > 0
+        assert OBJECTIVES[FULL_ONLY] == replace(OBJECTIVES[SUM_ALL], w_smooth=0.0)
+
+
+class TestExactFinish:
+    def test_rtp_excess(self):
+        specs = (SMALL, SMALL, SMALL)
+        ev = evaluate_counts([s.counts for s in specs], SUM_ALL)
+        assert rtp_excess(specs, SUM_ALL) == PAY_SCALE * ev.total_outcomes * (ev.rtp - TARGET_RTP)
+        assert rtp_excess(specs, SUM_ALL) > 0 > rtp_excess(specs, FULL_ONLY)
+
+    @pytest.mark.parametrize("mode", MODES)
+    @pytest.mark.parametrize("pivot", range(3))
+    def test_excess_is_affine_in_the_pivot(self, mode, pivot):
+        rng = random.Random(pivot)
+        specs = (SMALL, ReelSpec((2, 1, 3, 1, 1), (20, 3, 2, 1, 4), 4), random_spec(rng))
+        f0, coefs, gamma = excess_coefficients(specs, pivot, mode)
+        for _ in range(50):
+            spec = random_spec(rng)
+            moved = specs[:pivot] + (spec,) + specs[pivot + 1 :]
+            counters = (*spec.runs, *spec.extra)
+            linear = sum(c * v for c, v in zip(coefs, counters, strict=True))
+            assert rtp_excess(moved, mode) == f0 + linear + gamma * spec.singles
+
+    def test_lands_on_19_20(self):
+        start = (SMALL, SMALL, SMALL)
+        candidates = exact_finish(start, SUM_ALL)
+        assert len(candidates) >= 100
+        penalties = [c.penalty for c in candidates]
+        assert penalties == sorted(penalties)
+        assert len({c.specs for c in candidates}) == len(candidates)
+        for candidate in candidates:
+            assert rtp_excess(candidate.specs, SUM_ALL) == 0
+            assert all(in_domain(spec) for spec in candidate.specs)
+            assert pivot_of(start, candidate.specs) is not None
+        for candidate in candidates[:3]:
+            reels = [build_strip(spec) for spec in candidate.specs]
+            ev = evaluate(reels, SUM_ALL)
+            assert ev.rtp == Fraction(19, 20)
+            assert check_requirements(ev, reels) == []
+
+    def test_recovers_a_perturbed_solution(self):
+        solution = exact_finish((SMALL, SMALL, SMALL), SUM_ALL)[0].specs
+        off = (replace(solution[0], singles=solution[0].singles + 1), *solution[1:])
+        assert rtp_excess(off, SUM_ALL) != 0
+        candidates = exact_finish(off, SUM_ALL, single_shift=1, run_shift=1, extra_shift=(1, 1))
+        assert solution in [c.specs for c in candidates]
+
+    def test_nothing_out_of_reach(self):
+        """RTP far below target: singletons only lower it, so no nearby set is exact."""
+        low = ReelSpec((1, 1, 1, 1, 1), (20, 1, 1, 1, 1), 2)
+        assert exact_finish((low, low, low), SUM_ALL) == []
+
+
+class TestAnneal:
+    def test_deterministic_and_near_target(self):
+        first = anneal(SUM_ALL, seed=3, steps=1500)
+        assert anneal(SUM_ALL, seed=3, steps=1500) == first
+        penalty, specs = first
+        assert all(in_domain(spec) for spec in specs)
+        rtp, hit_rate, _ = fast_stats([s.counts for s in specs], full_screen_weight(SUM_ALL))
+        assert rtp == pytest.approx(0.95, abs=0.01)
+        assert hit_rate > 0.55
+        assert anneal(SUM_ALL, seed=4, steps=1500) != first
+
+
+@pytest.fixture(scope="module")
+def quick():
+    """A short search (2 restarts of 2000 steps) in sum_all."""
+    return search(SUM_ALL, seed=7, restarts=2, steps=2000)
+
+
+class TestSearch:
+    def test_exact_and_valid(self, quick):
+        ev = quick.evaluation
+        assert ev.rtp == Fraction(19, 20)
+        assert ev == evaluate(quick.reels, SUM_ALL)
+        assert quick.violations == []
+        assert quick.reels == tuple(build_strip(spec) for spec in quick.specs)
+        assert quick.symbol_hit_prob == symbol_hit_prob(count_reels(quick.reels))
+        assert sum(quick.symbol_hit_prob.values()) == ev.hit_rate
+        assert quick.exact_candidates >= 1
+        assert (quick.mode, quick.seed) == (SUM_ALL, 7)
+
+    def test_to_config(self, quick):
+        config = to_config(quick)
+        assert list(config) == [
+            "mode",
+            "reels",
+            "lengths",
+            "rtp",
+            "hit_rate",
+            "hit_rate_decimal",
+            "win_rate_above_bet",
+            "total_outcomes",
+            "seed",
+        ]
+        assert config["mode"] == "sum_all"
+        assert config["rtp"] == "19/20"
+        assert config["lengths"] == [len(reel) for reel in quick.reels]
+        assert config["seed"] == 7
+
+    def test_describe(self, quick):
+        text = describe(quick)
+        assert "RTP 19/20 = 0.950000" in text
+        assert "hard requirements: all met" in text
+
+
+FIVE = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4]  # a run of 3 of every symbol
+
+
+def codes(messages: list[str]) -> list[str]:
+    """The requirement codes (H1, S3, ...) of check messages."""
+    return [message.split(":")[0] for message in messages]
+
+
+@pytest.fixture(scope="module")
+def passing():
+    """An evaluation and reels that meet H1-H5, with the hit rate set to 3/5."""
+    reels = [FIVE, FIVE, FIVE]
+    return replace(evaluate(reels), rtp=Fraction(19, 20), hit_rate=Fraction(3, 5)), reels
+
+
+class TestCheckRequirements:
+    def test_passing(self, passing):
+        assert check_requirements(*passing) == []
+
+    @pytest.mark.parametrize(
+        ("hit_rate", "expected"),
+        [
+            (Fraction(11, 20), []),
+            (Fraction(10999, 20000), ["H2"]),
+            (Fraction(1, 2), ["H2"]),
+            (Fraction(11001, 20000), []),
+            (Fraction(1), []),
+        ],
+    )
+    def test_hit_rate_boundary(self, passing, hit_rate, expected):
+        ev, reels = passing
+        assert codes(check_requirements(replace(ev, hit_rate=hit_rate), reels)) == expected
+
+    @pytest.mark.parametrize(
+        ("rtp", "expected"),
+        [
+            (Fraction(95, 100), []),
+            (Fraction(19, 20) + Fraction(1, 10**12), ["H1"]),
+            (Fraction(19, 20) - Fraction(1, 10**12), ["H1"]),
+            (Fraction(9, 4), ["H1"]),
+        ],
+    )
+    def test_rtp_must_be_exact(self, passing, rtp, expected):
+        ev, reels = passing
+        assert codes(check_requirements(replace(ev, rtp=rtp), reels)) == expected
+
+    @pytest.mark.parametrize("symbol", SYMBOLS)
+    def test_symbol_without_rtp(self, passing, symbol):
+        ev, reels = passing
+        by_symbol = {**ev.rtp_by_symbol, symbol: Fraction(0)}
+        violations = check_requirements(replace(ev, rtp_by_symbol=by_symbol), reels)
+        assert violations == [f"H3: symbol {symbol} pays no RTP"]
+
+    @pytest.mark.parametrize("pattern", list(PATTERNS))
+    def test_pattern_never_hits(self, passing, pattern):
+        ev, reels = passing
+        prob = {**ev.pattern_hit_prob, pattern: Fraction(0)}
+        violations = check_requirements(replace(ev, pattern_hit_prob=prob), reels)
+        assert violations == [f"H4: pattern {pattern} never hits"]
+
+    @pytest.mark.parametrize("reel", range(3))
+    def test_missing_symbol(self, passing, reel):
+        ev, reels = passing
+        reels = [*reels]
+        reels[reel] = [x for x in FIVE if x != 2]
+        assert check_requirements(ev, reels) == [f"H5: reel {reel + 1} lacks symbols [2]"]
+
+    def test_single_symbol_reel(self, passing):
+        ev, reels = passing
+        violations = check_requirements(ev, [reels[0], [3, 3, 3], reels[2]])
+        assert violations == [
+            "H5: reel 2 lacks symbols [0, 1, 2, 4]",
+            "H5: reel 2 repeats the single symbol 3",
+        ]
+
+    def test_reports_every_violation(self, passing):
+        ev, reels = passing
+        ev = replace(ev, rtp=Fraction(1), hit_rate=Fraction(1, 2))
+        assert codes(check_requirements(ev, [[0, 0, 1], *reels[1:]])) == ["H1", "H2", "H5"]
+
+    def test_real_evaluation(self):
+        reels = [FIVE, FIVE, FIVE]
+        assert codes(check_requirements(evaluate(reels), reels)) == ["H1", "H2"]
+
+    def test_rejects_invalid_reels(self, passing):
+        with pytest.raises(ValueError):
+            check_requirements(passing[0], [[0], [9], [1]])
+
+
+class TestCheckPreferences:
+    def test_equal_reels_break_s1_only(self, passing):
+        ev, reels = passing
+        assert codes(check_preferences(ev, reels)) == ["S1"] * 4
+
+    def test_s2_needs_a_triple_on_every_reel(self, passing):
+        ev, reels = passing
+        no_444 = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 1, 4]
+        unmet = check_preferences(ev, [reels[0], no_444, reels[2]])
+        assert "S2: no full screen of symbol 4 is possible" in unmet
+
+    @pytest.mark.parametrize(
+        ("hit_rate", "in_band"),
+        [
+            (Fraction(11, 20), True),
+            (Fraction(7, 10), True),
+            (Fraction(10999, 20000), False),
+            (Fraction(7001, 10000), False),
+        ],
+    )
+    def test_s3_band(self, passing, hit_rate, in_band):
+        ev, reels = passing
+        unmet = codes(check_preferences(replace(ev, hit_rate=hit_rate), reels))
+        assert ("S3" not in unmet) is in_band
+
+    def test_s4_length_cap(self, passing):
+        ev, reels = passing
+        assert "S4" not in codes(check_preferences(ev, [FIVE * 10, *reels[1:]]))  # 150
+        long_reel = FIVE * 10 + [0]  # 151
+        unmet = check_preferences(ev, [reels[0], long_reel, reels[2]])
+        assert "S4: reel 2 has 151 symbols, more than 150" in unmet
