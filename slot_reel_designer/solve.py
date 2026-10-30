@@ -4,9 +4,12 @@
 
 Runs ``search.search`` for each requested payout mode, prints a summary and
 writes configs/reels.json (sum_all) and/or configs/reels_full_only.json.
-With the defaults (both modes, seed 0) it rewrites the committed configs
-byte for byte, in about 45 s. A reel set that breaks a hard requirement is
-not saved, and the exit code is then 1.
+``--seed N`` anneals with seeds N .. N + 9 (``search.RESTARTS`` runs), so
+neighbouring seeds share most runs. With the defaults (both modes, seed 0)
+it rewrites the committed configs byte for byte, in about 45 s; that has
+been checked on one platform only, since the annealing steers by floating
+point. A reel set that breaks a hard requirement is not saved, and the exit
+code is then 1.
 """
 
 from __future__ import annotations
@@ -18,7 +21,15 @@ from pathlib import Path
 
 from .files import save
 from .game import PayoutMode
-from .search import CONFIG_DIR, CONFIG_PATHS, DEFAULT_SEED, config_json, describe, search
+from .search import (
+    CONFIG_DIR,
+    CONFIG_PATHS,
+    DEFAULT_SEED,
+    RESTARTS,
+    config_json,
+    describe,
+    search,
+)
 
 MODES: dict[str, tuple[PayoutMode, ...]] = {
     **{str(mode): (mode,) for mode in PayoutMode},
@@ -34,7 +45,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--mode", choices=list(MODES), default="both", help="default: both")
     parser.add_argument(
-        "--seed", type=int, default=DEFAULT_SEED, help=f"search seed (default: {DEFAULT_SEED})"
+        "--seed",
+        type=int,
+        default=DEFAULT_SEED,
+        metavar="N",
+        help=f"anneal with seeds N .. N+{RESTARTS - 1} (default: {DEFAULT_SEED})",
     )
     parser.add_argument(
         "--out-dir",

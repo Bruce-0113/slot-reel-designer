@@ -191,6 +191,8 @@ Annealing gets close to 0.95 but rarely exactly on 19/20. The finish starts from
 
 With seed 0 the finish found 9,286 exact candidates in sum_all (chosen penalty 2.6233) and 2 in full_only (chosen penalty 9.2532). The search is deterministic per seed: `python -m slot_reel_designer.solve` with the defaults rewrites both committed configs byte for byte, in about 26 s (sum_all) and 18 s (full_only).
 
+`--seed N` anneals with seeds N to N + 9, so neighbouring seeds share 9 of their 10 runs. The outcome depends on the seed. With so few exact candidates in full_only, S1 holds with seed 0 but not, for example, with seeds 100 or 1000; any config `solve` saves still meets H1–H5. Byte-for-byte reproduction has been checked on one setup only (macOS on arm64, Python 3.12.8, numpy 2.5.4): the annealing is steered by floating-point arithmetic (`fast_stats`, `math.exp`, `math.log`), so another platform may end on different strips, which `verify` would still check exactly.
+
 ## 6. The two payout modes
 
 A full screen also completes all four 2×2 blocks, and the rules do not say whether those are paid too (README assumption 3). Both readings are supported (`PayoutMode` in [`game.py`](../slot_reel_designer/game.py)):
@@ -203,6 +205,7 @@ A full screen also completes all four 2×2 blocks, and the rules do not say whet
 - **Same hits, different pay.** Which patterns hit does not depend on the mode, so the hit rate and the pattern hit probabilities of a reel set are the same in both. The RTP, the payout distribution and the win rate above bet can differ.
 - **One reel set cannot serve both.** The sum_all config has an RTP of 3976079/6392100 ≈ 0.622030 under full_only, and the full_only config has 9595777/5880732 ≈ 1.631732 under sum_all. Each mode therefore has its own search and config.
 - **Why the full_only hit rate is higher.** A spin that wins on symbol 0 pays at most 0.75 without a full screen, because all four blocks hitting forces every column to (0, 0, 0). With a full screen it pays 2.25 under sum_all but only 1.25 under full_only. Under S1, symbol 0 (the cheapest) wins most often and carries most of the RTP. Under full_only it can supply at most 1.25 × hit rate, which is 0.875 at a hit rate of 0.70, so the remainder would have to come from rarer, higher symbols. The search found no full_only set that keeps H1, H2, S1 and S2 with the hit rate inside the S3 band. Since S1 and S2 rank higher, the full_only config keeps them and accepts a hit rate of 0.853421. In it, symbol 0 wins on 84.88% of spins and supplies 0.939766 of the 0.95 RTP.
+- **The full screen is not rare.** In a real paytable the full screen is the rare top prize. S1–S4 do not ask for that, and here a full screen is common, almost always of symbol 0: it hits on 32.5% of sum_all spins (1 in 3.08, about half of the winning spins, 43% of the RTP) and on 68.2% of full_only spins (80% of the winning spins, 90% of the RTP). The cause is the long runs of 0 on every reel, which the hit-rate floor (H2) and S1 push toward: most wins must be on symbol 0, whose 2×2 blocks pay only 0.25 each, so the search reaches 0.95 mainly through full screens of 0.
 
 ## 7. Verification
 

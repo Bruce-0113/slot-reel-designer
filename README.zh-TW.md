@@ -137,7 +137,8 @@ pytest                                    # 快速測試：2,483 個，只需幾
 pytest -m slow                            # 7 個較慢的檢查：重跑搜尋、暴力窮舉（需要幾分鐘）
 ```
 
-- `solve` 可指定 `--mode sum_all|full_only|both`、`--seed N` 與 `--out-dir DIR`。使用預設參數時，會逐位元組重現已提交的設定檔。
+- `solve` 可指定 `--mode sum_all|full_only|both`、`--seed N` 與 `--out-dir DIR`。`--seed N` 會以種子 N、N + 1、…、N + 9 跑 10 次模擬退火，因此相鄰的種子共用其中 9 次，可能得到相同的設定檔。結果取決於種子：已提交的設定檔來自種子 0，而其他種子（例如 100 與 1000）得到的 full_only 配置不滿足 S1。無論種子為何，儲存下來的設定檔都滿足 H1–H5。
+- 使用預設參數時，`solve` 會逐位元組重現已提交的設定檔。同一個種子的搜尋結果是確定的，但模擬退火由浮點數運算（`math.exp`、`math.log`）引導，因此逐位元組重現只在一個環境上檢查過：arm64 的 macOS、Python 3.12.8、numpy 2.5.4。在其他環境上，搜尋可能得到不同的 strip；儲存下來的設定檔仍滿足 H1–H5，`verify` 會精確檢查。
 - `verify` 可指定 `--config PATH ...`、`--n SPINS` 與 `--seed N`。若設定檔違反 H1–H5，或模擬結果與精確值相差超過 4 個標準誤，結束代碼為 1。
 - `python -m slot_reel_designer.poc` 會重跑概念驗證的掃描，並儲存 `configs/poc_reels.json`。
 

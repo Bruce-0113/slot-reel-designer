@@ -127,6 +127,7 @@ def test_runs_as_a_module():
     )
     assert done.returncode == 0
     assert "--mode" in done.stdout
+    assert "anneal with seeds N .. N+9" in done.stdout  # --seed N starts 10 restarts
 
 
 @pytest.mark.slow

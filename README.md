@@ -137,7 +137,8 @@ pytest                                    # fast suite: 2,483 tests, a few secon
 pytest -m slow                            # 7 slow checks: search reruns, brute force (a few minutes)
 ```
 
-- `solve` takes `--mode sum_all|full_only|both`, `--seed N` and `--out-dir DIR`. With the defaults it reproduces the committed configs byte for byte.
+- `solve` takes `--mode sum_all|full_only|both`, `--seed N` and `--out-dir DIR`. `--seed N` runs the 10 annealing restarts with seeds N, N + 1, …, N + 9, so neighbouring seeds share 9 of their 10 runs and can end with the same configs. The result depends on the seed: the committed configs come from seed 0, and some other seeds (100 and 1000, for example) give a full_only config that misses S1. Whatever the seed, a saved config meets H1–H5.
+- With the defaults, `solve` reproduces the committed configs byte for byte. The search is deterministic for a seed, but the annealing is steered by floating-point arithmetic (`math.exp`, `math.log`), so byte-for-byte reproduction has been checked on one setup only: macOS on arm64, Python 3.12.8, numpy 2.5.4. Elsewhere the search may end on different strips; any saved config still meets H1–H5, which `verify` checks exactly.
 - `verify` takes `--config PATH ...`, `--n SPINS` and `--seed N`. It exits with code 1 if a config breaks H1–H5 or disagrees with the simulation by more than 4 standard errors.
 - `python -m slot_reel_designer.poc` reruns the proof-of-concept scan and saves `configs/poc_reels.json`.
 
