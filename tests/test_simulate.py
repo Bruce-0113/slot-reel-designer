@@ -28,6 +28,10 @@ ALL_ZERO = ([0], [0, 0], [0, 0, 0])
 NO_HITS = ([0, 1], [2, 3], [4])
 # Hand-checked in test_evaluator: RTP 451/400 (sum_all), 407/400 (full_only), hit rate 9/10.
 MIXED = ([1, 1, 1, 0], [1, 1, 1], [1, 1, 1, 0, 0])
+# Every win is on symbol 4 and pays at least 5, so hit rate == win rate above bet:
+# about 0.983 on HIGH_HIT and 0.022 on LOW_HIT.
+HIGH_HIT = ([4] * 60 + [0],) * 3
+LOW_HIT = ([4] * 5 + [0, 1] * 20,) * 3
 TOLERANCE = 4  # standard errors allowed between an estimate and the exact value
 
 
@@ -124,16 +128,47 @@ class TestSimulate:
         low, high = result.rtp_ci95
         assert low == pytest.approx(result.rtp_mean - Z95 * result.rtp_stderr)
         assert high == pytest.approx(result.rtp_mean + Z95 * result.rtp_stderr)
-        p = result.hit_rate
-        stderr = math.sqrt(p * (1 - p) / (n - 1))
-        assert result.hit_rate_stderr == pytest.approx(stderr)
-        assert result.hit_rate_ci95 == pytest.approx((p - Z95 * stderr, p + Z95 * stderr))
+        assert 0 < result.above_bet < result.hits < n  # neither proportion is degenerate
+        for p, stderr, ci95 in [
+            (result.hit_rate, result.hit_rate_stderr, result.hit_rate_ci95),
+            (
+                result.win_rate_above_bet,
+                result.win_rate_above_bet_stderr,
+                result.win_rate_above_bet_ci95,
+            ),
+        ]:
+            expected = math.sqrt(p * (1 - p) / (n - 1))
+            assert stderr == pytest.approx(expected)
+            assert ci95 == pytest.approx((p - Z95 * expected, p + Z95 * expected))
         assert Z95 == pytest.approx(1.959964)
 
-    def test_proportion_intervals_stay_in_unit_interval(self):
-        result = simulate(MIXED, 50, SUM_ALL, seed=0)
-        for low, high in (result.hit_rate_ci95, result.win_rate_above_bet_ci95):
-            assert 0 <= low <= high <= 1
+    @pytest.mark.parametrize(
+        ("reels", "bound"),
+        [
+            (HIGH_HIT, 1),  # 98 of 100 spins win: the unclipped interval passes 1
+            (LOW_HIT, 0),  # 3 of 100 spins win: the unclipped interval passes 0
+        ],
+    )
+    def test_proportion_intervals_are_clipped_to_the_unit_interval(self, reels, bound):
+        result = simulate(reels, 100, SUM_ALL, seed=0)
+        assert result.hits == result.above_bet  # every win pays at least 5
+        assert result.hits == (98 if bound else 3)
+        for p, stderr, (low, high) in [
+            (result.hit_rate, result.hit_rate_stderr, result.hit_rate_ci95),
+            (
+                result.win_rate_above_bet,
+                result.win_rate_above_bet_stderr,
+                result.win_rate_above_bet_ci95,
+            ),
+        ]:
+            if bound:
+                assert p + Z95 * stderr > 1
+                assert high == 1.0
+                assert low == pytest.approx(p - Z95 * stderr)
+            else:
+                assert p - Z95 * stderr < 0
+                assert low == 0.0
+                assert high == pytest.approx(p + Z95 * stderr)
 
     def test_mode_accepts_strings(self):
         assert simulate(ALL_ZERO, 10, "full_only", seed=0).rtp_mean == 1.25
