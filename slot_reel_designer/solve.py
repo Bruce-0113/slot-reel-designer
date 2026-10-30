@@ -16,6 +16,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from .files import save
 from .game import PayoutMode
 from .search import CONFIG_DIR, CONFIG_PATHS, DEFAULT_SEED, config_json, describe, search
 
@@ -42,17 +43,6 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="directory for reels.json and reels_full_only.json (default: configs/)",
     )
     return parser.parse_args(argv)
-
-
-def save(text: str, path: Path) -> str:
-    """Write ``text`` to ``path``; return 'created', 'updated' or 'unchanged'."""
-    if path.exists():
-        state = "unchanged" if path.read_text() == text else "updated"
-    else:
-        state = "created"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text)
-    return state
 
 
 def main(argv: Sequence[str] | None = None) -> int:

@@ -25,6 +25,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from .evaluator import Evaluation, evaluate, outcome_counts, payout_distribution, payout_variance
+from .files import save
 from .game import (
     FULL_SCREEN,
     FULL_SCREEN_FACTOR,
@@ -35,7 +36,6 @@ from .game import (
     pattern_payouts,
 )
 from .search import CONFIG_DIR, CONFIG_PATHS, ReelCounts, count_reels, load_config
-from .solve import save
 
 Reels = tuple[tuple[int, ...], ...]
 

@@ -36,8 +36,9 @@ middle, the singleton count that makes the RTP exactly 19/20 is solved for,
 candidates with a hit rate below 11/20 are dropped, and the best remaining
 candidate is built into strips and scored with ``evaluate``.
 
-Run ``python -m slot_reel_designer.search`` to search both payout modes and
-save configs/reels.json (sum_all) and configs/reels_full_only.json.
+The command line is ``python -m slot_reel_designer.solve``: it searches both
+payout modes and saves configs/reels.json (sum_all) and
+configs/reels_full_only.json.
 """
 
 from __future__ import annotations
@@ -46,7 +47,6 @@ import json
 import math
 import random
 import re
-import time
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -58,7 +58,7 @@ from typing import Any
 
 import numpy as np
 
-from .evaluator import Evaluation, HitKey, _summarize, evaluate
+from .evaluator import Evaluation, HitKey, evaluate, summarize
 from .game import (
     FULL_SCREEN,
     FULL_SCREEN_FACTOR,
@@ -165,7 +165,7 @@ def evaluate_counts(
     counts: Sequence[ReelCounts], mode: PayoutMode | str = PayoutMode.SUM_ALL
 ) -> Evaluation:
     """Exact ``Evaluation`` of any reel set with these counts (equal to ``evaluate``)."""
-    return _summarize(_state_outcomes(counts), mode)
+    return summarize(_state_outcomes(counts), mode)
 
 
 def symbol_hit_prob(counts: Sequence[ReelCounts]) -> dict[int, Fraction]:
@@ -945,20 +945,3 @@ def describe(result: SearchResult) -> str:
     ]
     return "\n".join(lines)
 
-
-def main(seed: int = DEFAULT_SEED) -> None:
-    """Search both payout modes and save their configs."""
-    for mode, path in CONFIG_PATHS.items():
-        start = time.perf_counter()
-        result = search(mode, seed)
-        print(describe(result))
-        print(f"  searched in {time.perf_counter() - start:.1f}s")
-        if result.violations:
-            raise SystemExit(f"{mode}: hard requirements broken; nothing saved")
-        path.parent.mkdir(exist_ok=True)
-        path.write_text(config_json(result))
-        print(f"  saved {path}")
-
-
-if __name__ == "__main__":
-    main()

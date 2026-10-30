@@ -169,6 +169,7 @@ pytest -m slow                            # 7 個較慢的檢查：重跑搜尋�
 │   ├── poc.py                     # 概念驗證的 reel 家族與掃描
 │   ├── search.py                  # 計數模型、strip 建構、搜尋與精確收尾
 │   ├── simulate.py                # Monte Carlo 模擬
+│   ├── files.py                   # 命令列工具共用的檔案輸出
 │   ├── solve.py                   # 命令列：搜尋並儲存設定檔
 │   ├── verify.py                  # 命令列：精確驗證 + Monte Carlo 模擬
 │   └── report.py                  # 命令列：產生 PAR sheet

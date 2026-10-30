@@ -233,7 +233,7 @@ class TestSavedConfig:
 
 @pytest.mark.slow
 def test_search_reproduces_config(mode, config):
-    """The saved file is exactly what `python -m slot_reel_designer.search` writes."""
+    """The saved file is exactly what `python -m slot_reel_designer.solve` writes."""
     result = search(mode, config["seed"])
     assert to_config(result) == config
     assert config_json(result) == CONFIG_PATHS[mode].read_text()

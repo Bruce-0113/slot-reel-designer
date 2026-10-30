@@ -62,7 +62,7 @@ def evaluate(
     are merged into one blank column carrying their total count. That keeps
     the work to at most 125 x 10 x 10 grids, however long the reels are.
     """
-    return _summarize(outcome_counts(reels), mode)
+    return summarize(outcome_counts(reels), mode)
 
 
 def outcome_counts(reels: Sequence[Sequence[int]]) -> Counter[HitKey]:
@@ -111,7 +111,7 @@ def evaluate_bruteforce(
     outcomes: Counter[HitKey] = Counter()
     for stops in product(*(range(len(strip)) for strip in strips)):
         outcomes[tuple(pattern_hits(window(strips, stops)).items())] += 1
-    return _summarize(outcomes, mode)
+    return summarize(outcomes, mode)
 
 
 def _completes_block(outer: Triple, mid: Triple) -> bool:
@@ -130,8 +130,12 @@ def _merge_idle(counts: Counter[Triple], mid: Triple) -> list[tuple[Triple, int]
     return active
 
 
-def _summarize(outcomes: Counter[HitKey], mode: PayoutMode | str) -> Evaluation:
-    """Turn outcome counts, keyed by the patterns hit, into exact statistics."""
+def summarize(outcomes: Counter[HitKey], mode: PayoutMode | str) -> Evaluation:
+    """Turn outcome counts, keyed by the patterns hit, into exact statistics.
+
+    ``outcomes`` maps each set of (pattern, symbol) hits to its number of stop
+    combinations, as ``outcome_counts`` returns; the counts total L1 * L2 * L3.
+    """
     total = outcomes.total()
     hit_count = above_bet_count = 0
     pattern_count = dict.fromkeys(PATTERNS, 0)

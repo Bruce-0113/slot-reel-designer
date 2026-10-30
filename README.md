@@ -169,6 +169,7 @@ pytest -m slow                            # 7 slow checks: search reruns, brute 
 │   ├── poc.py                    # proof-of-concept reel family and scan
 │   ├── search.py                 # counts model, strip builder, search and exact finish
 │   ├── simulate.py               # Monte Carlo simulation
+│   ├── files.py                  # file output shared by the CLIs
 │   ├── solve.py                  # CLI: search and save configs
 │   ├── verify.py                 # CLI: exact check + Monte Carlo
 │   └── report.py                 # CLI: generate the PAR sheets
