@@ -117,7 +117,7 @@ RTP contribution by symbol and pattern, and the full payout distribution: see [`
 3. **Counts model** — every statistic depends only on each reel's length and, per symbol, its cyclic pairs and triples (16 states per reel, 4,096 state combinations), not on how the strip is arranged. 20·L₁·L₂·L₃·RTP is an integer, so "RTP = 19/20" is integer bookkeeping.
 4. **Search** — seeded simulated annealing over run counts (10 runs of 60,000 steps) minimises a penalty that follows the requirements' priorities. An exact finish then makes the RTP exactly 19/20: with two reels fixed, the integer RTP excess is affine in the third reel's run counts, so a meet-in-the-middle enumeration finds the counts that cancel it. Candidates with a hit rate below 11/20 are dropped before the best one is chosen.
 5. **Strip construction** — the chosen run counts are laid out so that runs of one symbol never touch, and the built strips are re-checked with the exact evaluator.
-6. **Verification** — exact enumeration, brute-force cross-checks, Monte Carlo simulation with 95% confidence intervals, and 2,490 tests.
+6. **Verification** — exact enumeration, brute-force cross-checks, Monte Carlo simulation with 95% confidence intervals, and 2,530 tests.
 
 Details: [`docs/methodology.md`](docs/methodology.md)
 
@@ -133,7 +133,7 @@ pip install -r requirements.txt
 python -m slot_reel_designer.solve        # search both payout modes and rewrite configs/*.json (about 45 s)
 python -m slot_reel_designer.verify       # exact check (H1–H5) + Monte Carlo with 10^7 spins per config
 python -m slot_reel_designer.report       # regenerate docs/par-sheet.md and docs/par-sheet.zh-TW.md
-pytest                                    # fast suite: 2,483 tests, a few seconds
+pytest                                    # fast suite: 2,523 tests, a few seconds
 pytest -m slow                            # 7 slow checks: search reruns, brute force (a few minutes)
 ```
 
@@ -174,5 +174,5 @@ pytest -m slow                            # 7 slow checks: search reruns, brute 
 │   ├── solve.py                  # CLI: search and save configs
 │   ├── verify.py                 # CLI: exact check + Monte Carlo
 │   └── report.py                 # CLI: generate the PAR sheets
-└── tests/                        # pytest suite: one file per module, plus test_configs.py
+└── tests/                        # pytest suite: one file per module, plus test_configs.py and test_docs.py
 ```

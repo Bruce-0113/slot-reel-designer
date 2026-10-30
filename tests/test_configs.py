@@ -237,6 +237,22 @@ def test_search_reproduces_config(mode, config):
     result = search(mode, config["seed"])
     assert to_config(result) == config
     assert config_json(result) == CONFIG_PATHS[mode].read_text()
+    # The methodology quotes the finish's candidate count and the chosen penalty.
+    found, penalty = f"{result.exact_candidates:,}", f"{result.penalty:.4f}"
+    quoted = {
+        SUM_ALL: (
+            f"found {found} exact candidates in sum_all (chosen penalty {penalty})",
+            f"在 sum_all 找到 {found} 個精確候選（選中者的懲罰值 {penalty}）",
+        ),
+        FULL_ONLY: (
+            f"and {found} in full_only (chosen penalty {penalty})",
+            f"在 full_only 找到 {found} 個（懲罰值 {penalty}）",
+        ),
+    }
+    docs = CONFIG_PATHS[mode].parent.parent / "docs"
+    english, chinese = quoted[mode]
+    assert english in (docs / "methodology.md").read_text()
+    assert chinese in (docs / "methodology.zh-TW.md").read_text()
 
 
 @pytest.mark.slow

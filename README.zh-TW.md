@@ -117,7 +117,7 @@ reel 3: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 3. **計數模型**：所有統計結果只取決於每條 reel 的長度，以及每個符號在循環 strip 上的成對數與三連數（每條 reel 16 種狀態、共 4,096 種狀態組合），與 strip 的排列方式無關。20·L₁·L₂·L₃·RTP 必為整數，所以「RTP = 19/20」只是整數運算。
 4. **搜尋配置**：以設定種子的模擬退火（10 次，每次 60,000 步）在連續區段計數上最小化一個依要求優先順序設計的懲罰函數。接著以精確收尾讓 RTP 剛好等於 19/20：固定兩條 reel 時，整數化的 RTP 超出量是第三條 reel 區段計數的仿射函數，因此用中間相遇法列舉，就能找到讓超出量歸零的計數。勝率低於 11/20 的候選會先被剔除，再從中選出最好的一組。
 5. **建構 strip**：把選中的區段計數排列成 strip，使同一符號的連續區段永不相鄰，再以精確評估器重新檢查建好的 strip。
-6. **驗證**：精確窮舉、暴力窮舉交叉驗證、附 95% 信賴區間的 Monte Carlo 模擬，以及 2,490 個測試。
+6. **驗證**：精確窮舉、暴力窮舉交叉驗證、附 95% 信賴區間的 Monte Carlo 模擬，以及 2,530 個測試。
 
 詳細說明：[`docs/methodology.zh-TW.md`](docs/methodology.zh-TW.md)
 
@@ -133,7 +133,7 @@ pip install -r requirements.txt
 python -m slot_reel_designer.solve        # 搜尋兩種 payout 模式並重寫 configs/*.json（約 45 秒）
 python -m slot_reel_designer.verify       # 精確驗證（H1–H5）+ 每個設定檔 10^7 次 spin 的 Monte Carlo 模擬
 python -m slot_reel_designer.report       # 重新產生 docs/par-sheet.md 與 docs/par-sheet.zh-TW.md
-pytest                                    # 快速測試：2,483 個，只需幾秒
+pytest                                    # 快速測試：2,523 個，只需幾秒
 pytest -m slow                            # 7 個較慢的檢查：重跑搜尋、暴力窮舉（需要幾分鐘）
 ```
 
@@ -174,5 +174,5 @@ pytest -m slow                            # 7 個較慢的檢查：重跑搜尋�
 │   ├── solve.py                   # 命令列：搜尋並儲存設定檔
 │   ├── verify.py                  # 命令列：精確驗證 + Monte Carlo 模擬
 │   └── report.py                  # 命令列：產生 PAR sheet
-└── tests/                         # pytest 測試：每個模組一個檔案，另加 test_configs.py
+└── tests/                         # pytest 測試：每個模組一個檔案，另加 test_configs.py 與 test_docs.py
 ```
