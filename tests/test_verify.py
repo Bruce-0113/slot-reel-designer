@@ -1,6 +1,7 @@
 """Tests for `python -m slot_reel_designer.verify`."""
 
 import json
+import math
 import re
 import subprocess
 import sys
@@ -9,7 +10,7 @@ from dataclasses import replace
 import pytest
 
 from slot_reel_designer import verify
-from slot_reel_designer.evaluator import evaluate
+from slot_reel_designer.evaluator import evaluate, payout_distribution, payout_variance
 from slot_reel_designer.game import PayoutMode
 from slot_reel_designer.poc import CONFIG_PATH as POC_CONFIG
 from slot_reel_designer.search import CONFIG_DIR, CONFIG_PATHS, load_config
@@ -126,6 +127,45 @@ def test_z_check_tolerates_a_miss_of_the_95_interval(monkeypatch, capsys):
     assert code == 0
     rtp_line = next(line for line in out.splitlines() if "+2.50" in line)
     assert rtp_line.split()[-2:] == ["no", "ok"]
+
+
+@pytest.mark.parametrize(
+    ("offset", "code", "check"),
+    [(4.5, 1, "FAIL"), (-4.5, 1, "FAIL"), (3.9, 0, "ok"), (-3.9, 0, "ok")],
+)
+def test_z_limit_is_four_standard_errors(monkeypatch, capsys, offset, code, check):
+    """An RTP estimate 4.5 standard errors off fails the config; 3.9 off passes."""
+
+    def shifted(*args, **kwargs):
+        sim = simulate(*args, **kwargs)
+        mean = 0.95 + offset * sim.rtp_stderr
+        half = verify.Z95 * sim.rtp_stderr
+        return replace(sim, rtp_mean=mean, rtp_ci95=(mean - half, mean + half))
+
+    monkeypatch.setattr(verify, "simulate", shifted)
+    exit_code, out = run(
+        ["--config", str(CONFIG_PATHS[PayoutMode.SUM_ALL]), "--n", SPINS], capsys
+    )
+    assert exit_code == code
+    rtp_line = next(line for line in out.splitlines() if f"{offset:+.2f}" in line)
+    assert rtp_line.split()[-2:] == ["no", check]
+    summary = "all 1 configs passed" if code == 0 else "1 of 1 configs failed: configs/reels.json"
+    assert out.rstrip().endswith(summary)
+
+
+@pytest.mark.parametrize(
+    ("mode", "printed"), [(PayoutMode.SUM_ALL, "0.997510"), (PayoutMode.FULL_ONLY, "0.502890")]
+)
+def test_prints_the_exact_payout_sd(capsys, mode, printed):
+    """The exact s.d. per spin, in the exact section and beside the simulated one."""
+    _, out = run(["--config", str(CONFIG_PATHS[mode]), "--n", SPINS], capsys)
+    _, reels = load_config(CONFIG_PATHS[mode])
+    exact_sd = math.sqrt(payout_variance(payout_distribution(reels, mode)))
+    assert f"{exact_sd:.6f}" == printed
+    exact_row, sim_row = [line.split() for line in out.splitlines() if "payout s.d." in line]
+    assert exact_row == ["payout", "s.d.", printed]
+    sim = simulate(reels, int(SPINS), mode, seed=0)
+    assert sim_row == ["payout", "s.d.", f"{sim.payout_sd:.6f}", printed]
 
 
 @pytest.mark.parametrize(
