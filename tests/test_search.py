@@ -12,6 +12,7 @@ import pytest
 from slot_reel_designer.evaluator import evaluate, evaluate_bruteforce
 from slot_reel_designer.game import PATTERNS, SYMBOLS, PayoutMode, pattern_hits, window
 from slot_reel_designer.search import (
+    CONFIG_PATHS,
     EXTRA_SHIFT,
     OBJECTIVES,
     PAY,
@@ -24,6 +25,7 @@ from slot_reel_designer.search import (
     ReelSpec,
     _alternating_fill,
     _cyclic_order,
+    _symbol_items,
     anneal,
     build_strip,
     check_preferences,
@@ -93,6 +95,16 @@ def cyclic_runs(strip) -> list[tuple[int, int]]:
         return [(strip[0], n)]
     rotated = list(strip[starts[0]:]) + list(strip[:starts[0]])
     return [(x, len(list(group))) for x, group in groupby(rotated)]
+
+
+def spec_of(strip) -> ReelSpec:
+    """The run spec of a strip whose neighbouring runs differ in symbol."""
+    runs = cyclic_runs(strip)
+    return ReelSpec(
+        tuple(sum(k >= 2 for y, k in runs if y == x) for x in SYMBOLS),
+        tuple(sum(k - 2 for y, k in runs if y == x and k >= 2) for x in SYMBOLS),
+        sum(k == 1 for _, k in runs),
+    )
 
 
 SEEDS = range(150)
@@ -265,6 +277,28 @@ class TestBuildStrip:
     def test_deterministic(self):
         spec = ReelSpec((2, 2, 1, 1, 1), (96, 14, 3, 1, 1), 1)
         assert build_strip(spec) == build_strip(spec)
+
+    @pytest.mark.parametrize(
+        ("runs", "extra", "singles", "items"),
+        [
+            (4, 6, 3, [4, 3, 1, 4, 3, 1, 1]),  # a singleton after runs 2 and 4, one left over
+            (5, 7, 1, [4, 3, 1, 4, 3, 3]),  # long and short runs alternate
+            (3, 0, 2, [2, 2, 1, 2, 1]),
+            (1, 3, 1, [5, 1]),
+            (0, 0, 2, [1, 1]),
+        ],
+    )
+    def test_symbol_items(self, runs, extra, singles, items):
+        """Item lengths of one symbol in strip order: the layout rule is pinned."""
+        assert _symbol_items(runs, extra, singles) == items
+
+    @pytest.mark.parametrize("mode", MODES, ids=str)
+    def test_rebuilds_the_committed_reels(self, mode):
+        """Each saved reel is exactly what build_strip makes of its run spec."""
+        for reel in json.loads(CONFIG_PATHS[mode].read_text())["reels"]:
+            spec = spec_of(reel)
+            assert in_domain(spec)
+            assert build_strip(spec) == tuple(reel)
 
 
 @pytest.mark.parametrize("order", [_cyclic_order, _alternating_fill])
