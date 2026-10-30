@@ -33,8 +33,8 @@ reel's singleton count is re-solved in closed form so the RTP stays near
 20 * L1 * L2 * L3 * (RTP - 19/20) is affine in the third reel's run counts:
 small changes around the best annealing results are enumerated meet in the
 middle, the singleton count that makes the RTP exactly 19/20 is solved for,
-and the best exact candidate is built into strips and scored with
-``evaluate``.
+candidates with a hit rate below 11/20 are dropped, and the best remaining
+candidate is built into strips and scored with ``evaluate``.
 
 Run ``python -m slot_reel_designer.search`` to search both payout modes and
 save configs/reels.json (sum_all) and configs/reels_full_only.json.
@@ -609,6 +609,13 @@ def anneal(
 # --------------------------------------------------------------------------- exact finish
 
 
+def meets_hit_floor(specs: Specs) -> bool:
+    """True if every reel set built from ``specs`` has a hit rate >= 11/20 (H2), exactly."""
+    counts = [spec.counts for spec in specs]
+    outcomes = math.prod(c.length for c in counts)
+    return Fraction(sum(symbol_hit_numerators(counts)), outcomes) >= MIN_HIT_RATE
+
+
 def rtp_excess(specs: Specs, mode: PayoutMode | str) -> int:
     """``20 * L1 * L2 * L3 * (RTP - 19/20)`` exactly; zero means the RTP is exactly 19/20."""
     counts = [spec.counts for spec in specs]
@@ -649,7 +656,7 @@ def _neighbourhood(
 
 @dataclass(frozen=True)
 class Candidate:
-    """A spec triple with an RTP of exactly 19/20, and its penalty without the RTP term."""
+    """A spec triple that meets H1 and H2 exactly, and its penalty without the RTP term."""
 
     penalty: float
     specs: Specs
@@ -664,7 +671,7 @@ def exact_finish(
     run_shift: int = RUN_SHIFT,
     extra_shift: tuple[int, int] = EXTRA_SHIFT,
 ) -> list[Candidate]:
-    """Every in-domain spec triple near ``specs`` with an RTP of exactly 19/20, best first.
+    """Every in-domain spec triple near ``specs`` that meets H1 and H2 exactly, best first.
 
     Each reel in turn is the pivot. The other two keep their runs and change
     their singleton count by up to ``single_shift``; the pivot's run counts
@@ -673,12 +680,16 @@ def exact_finish(
     f0 + coefs . v + gamma * singles == 0 for the pivot's counters v, so
     the counters are split into two groups whose partial sums are matched
     on their residues mod |gamma|, and each match fixes ``singles`` exactly.
+    Matches with a hit rate below 11/20 are dropped (``meets_hit_floor``).
+    The domain gives H3-H5, so every candidate meets all hard requirements
+    and the penalty only ranks compliant reel sets.
     """
     mode = PayoutMode(mode)
     objective = objective or OBJECTIVES[mode]
     weight = full_screen_weight(mode)
     group_a, group_b = [0, 5, 1, 6, 2], [7, 3, 8, 4, 9]  # runs are 0..4, extras 5..9
     found: dict[Specs, Candidate] = {}
+    below_floor: set[Specs] = set()
     for pivot in range(3):
         others = [i for i in range(3) if i != pivot]
         start = specs[pivot]
@@ -718,9 +729,13 @@ def exact_finish(
                     if not in_domain(spec):
                         continue
                     triple = tuple(base[:pivot]) + (spec,) + tuple(base[pivot + 1 :])
-                    if triple not in found:
-                        pen = _score(triple, weight, objective, with_rtp=False)
-                        found[triple] = Candidate(pen, triple)
+                    if triple in found or triple in below_floor:
+                        continue
+                    if not meets_hit_floor(triple):
+                        below_floor.add(triple)
+                        continue
+                    pen = _score(triple, weight, objective, with_rtp=False)
+                    found[triple] = Candidate(pen, triple)
     candidates = sorted(found.values(), key=lambda c: (c.penalty, _spec_key(c.specs)))
     if any(rtp_excess(c.specs, mode) for c in candidates):
         raise AssertionError("exact finish produced a spec triple off the target RTP")
@@ -798,7 +813,7 @@ class SearchResult:
     evaluation: Evaluation
     symbol_hit_prob: dict[int, Fraction]  # P(a spin wins on x)
     penalty: float  # objective without the RTP term
-    exact_candidates: int  # exact spec triples the finish found, over all starts
+    exact_candidates: int  # spec triples meeting H1 and H2 that the finish found, all starts
 
     @property
     def violations(self) -> list[str]:
@@ -822,8 +837,9 @@ def search(
     """Search for a reel set with an RTP of exactly 19/20 in ``mode``; deterministic per seed.
 
     Anneals from seeds ``seed .. seed + restarts - 1``, runs the exact finish
-    from the best ``FINISH_TOP`` results and keeps the exact candidate with
-    the lowest penalty. Raises RuntimeError if the finish finds none.
+    from the best ``FINISH_TOP`` results and keeps the candidate (RTP exactly
+    19/20, hit rate >= 11/20) with the lowest penalty. Raises RuntimeError
+    if the finish finds none.
     """
     mode = PayoutMode(mode)
     objective = objective or OBJECTIVES[mode]
@@ -837,7 +853,10 @@ def search(
         if candidates and (best is None or candidates[0].penalty < best.penalty):
             best = candidates[0]
     if best is None:
-        raise RuntimeError(f"no reel set with RTP {TARGET_RTP} found for {mode}, seed {seed}")
+        raise RuntimeError(
+            f"no reel set with RTP {TARGET_RTP} and hit rate >= {MIN_HIT_RATE} found"
+            f" for {mode}, seed {seed}"
+        )
     reels = tuple(build_strip(spec) for spec in best.specs)
     ev = evaluate(reels, mode)
     if ev.rtp != TARGET_RTP:

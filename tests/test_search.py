@@ -9,6 +9,7 @@ from itertools import groupby, product
 
 import pytest
 
+from slot_reel_designer import search as search_module
 from slot_reel_designer.evaluator import evaluate, evaluate_bruteforce
 from slot_reel_designer.game import PATTERNS, SYMBOLS, PayoutMode, pattern_hits, window
 from slot_reel_designer.search import (
@@ -316,6 +317,23 @@ def test_item_orders_never_repeat_a_symbol(order):
 SMALL = ReelSpec((1, 1, 1, 1, 1), (35, 1, 1, 1, 1), 2)
 
 
+# Near the H2 floor: annealed in sum_all (seed 0, 3000 steps) towards a hit rate of 0.55.
+NEAR_FLOOR = (
+    ReelSpec((1, 2, 1, 2, 1), (80, 1, 1, 1, 1), 0),
+    ReelSpec((1, 5, 2, 1, 3), (61, 7, 6, 6, 4), 9),
+    ReelSpec((1, 1, 2, 1, 1), (87, 1, 1, 1, 1), 0),
+)
+# Ranks candidates mostly by a low hit rate and has no H2 term.
+PREFERS_LOW_HIT = Objective(hit_min=0.0, w_hit_min=0.0, w_s3=0.0, hit_mid=0.0, w_mid=1000.0)
+
+
+def exact_hit_rate(specs) -> Fraction:
+    """Hit rate of any reel set built from ``specs`` (closed form; see test_closed_forms)."""
+    counts = [spec.counts for spec in specs]
+    outcomes = counts[0].length * counts[1].length * counts[2].length
+    return Fraction(sum(symbol_hit_numerators(counts)), outcomes)
+
+
 def pivot_of(start, specs) -> int | None:
     """The reel the finish varied: the others keep their runs and move few singletons."""
     for p in range(3):
@@ -419,6 +437,21 @@ class TestExactFinish:
         candidates = exact_finish(off, SUM_ALL, single_shift=1, run_shift=1, extra_shift=(1, 1))
         assert solution in [c.specs for c in candidates]
 
+    def test_keeps_only_candidates_meeting_the_hit_rate_floor(self, monkeypatch):
+        """H2 is checked exactly: a candidate under 11/20 is dropped, even when it ranks first."""
+        candidates = exact_finish(NEAR_FLOOR, SUM_ALL, PREFERS_LOW_HIT)
+        assert len(candidates) >= 1000
+        assert min(exact_hit_rate(c.specs) for c in candidates) >= Fraction(11, 20)
+        reels = [build_strip(spec) for spec in candidates[0].specs]
+        assert check_requirements(evaluate(reels, SUM_ALL), reels) == []
+        # Without the floor, the lowest-penalty candidate breaks H2.
+        monkeypatch.setattr(search_module, "MIN_HIT_RATE", Fraction(0))
+        unfiltered = exact_finish(NEAR_FLOOR, SUM_ALL, PREFERS_LOW_HIT)
+        best = evaluate_counts([spec.counts for spec in unfiltered[0].specs])
+        assert best.hit_rate < Fraction(11, 20)
+        kept = [c for c in unfiltered if exact_hit_rate(c.specs) >= Fraction(11, 20)]
+        assert kept == candidates
+
     def test_nothing_out_of_reach(self):
         """RTP far below target: singletons only lower it, so no nearby set is exact."""
         low = ReelSpec((1, 1, 1, 1, 1), (20, 1, 1, 1, 1), 2)
@@ -481,6 +514,13 @@ class TestSearch:
         reels = [json.loads(line.strip().rstrip(",")) for line in reel_lines]
         assert reels == to_config(quick)["reels"]
         assert not any(line.strip().rstrip(",").isdigit() for line in text.splitlines())
+
+    def test_choice_meets_the_hit_rate_floor(self, monkeypatch):
+        """The finish's lowest-penalty candidate would break H2; a compliant one is chosen."""
+        monkeypatch.setattr(search_module, "anneal", lambda *args, **kwargs: (0.0, NEAR_FLOOR))
+        result = search(SUM_ALL, seed=0, restarts=1, objective=PREFERS_LOW_HIT)
+        assert result.violations == []
+        assert result.evaluation.hit_rate >= Fraction(11, 20)
 
     def test_describe(self, quick):
         text = describe(quick)
