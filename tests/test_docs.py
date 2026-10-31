@@ -51,6 +51,12 @@ def tables(text: str) -> list[list[list[str]]]:
     return found
 
 
+def section(text: str, heading: str) -> str:
+    """The body of the ``## heading`` section of ``text``, up to the next ``## `` heading."""
+    body = text.split(f"\n{heading}\n", 1)[1]
+    return body.split("\n## ", 1)[0]
+
+
 def runs(reel) -> str:
     """symbol×length runs from index 0, as the strip tables write them."""
     return " ".join(f"{x}×{len(list(group))}" for x, group in groupby(reel))
@@ -152,6 +158,40 @@ def test_quoted_simulation_figures():
     chinese = METHODOLOGY["zh-TW"].read_text()
     assert f"z 值為 {a}、{b}、{c}（sum_all" in chinese
     assert f"與 {d}、{e}、{f}（full_only）" in chinese
+
+
+SUMMARY = {"en": ("## TL;DR", "## Problem"), "zh-TW": ("## 重點摘要", "## 問題定義")}
+
+
+@pytest.fixture(scope="module")
+def primary_figures() -> dict[str, str]:
+    """Figures of the primary (sum_all) config as the README summaries write them."""
+    mode = PayoutMode.SUM_ALL
+    reels = json.loads(CONFIG_PATHS[mode].read_text())["reels"]
+    ev = evaluate(reels, mode)
+    sim = simulate(reels, VERIFY_SPINS, mode, seed=0)
+    n = ev.total_outcomes
+    assert ev.rtp == Fraction(19, 20)
+    return {
+        "lengths": [len(reel) for reel in reels],
+        "outcomes": f"{n:,}",
+        "integer_check": f"{int(20 * ev.rtp * n):,} = 19 × {n:,}",
+        "hit_rate": f"{float(ev.hit_rate):.1%}",
+        "simulation": f"{sim.rtp_mean:.6f} ± {Z95 * sim.rtp_stderr:.6f}",
+    }
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_summary_figures(lang, primary_figures):
+    """The summary at the top of each README quotes the primary config's figures."""
+    text = README[lang].read_text()
+    heading, next_heading = SUMMARY[lang]
+    assert text.index(heading) < text.index(next_heading)
+    summary = section(text, heading)
+    a, b, c = primary_figures["lengths"]
+    lengths = f"{a}, {b} and {c}" if lang == "en" else f"{a}、{b}、{c}"
+    for figure in [lengths, *(primary_figures[key] for key in primary_figures if key != "lengths")]:
+        assert figure in summary
 
 
 @pytest.fixture(scope="module")
