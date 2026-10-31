@@ -2,9 +2,19 @@
 
 English | [繁體中文](README.zh-TW.md)
 
+[![CI](https://github.com/Bruce-0113/slot-reel-designer/actions/workflows/ci.yml/badge.svg)](https://github.com/Bruce-0113/slot-reel-designer/actions/workflows/ci.yml)
+
 Design slot reel strips for a 3×3 game that achieve an **exact RTP of 0.95** with a **hit frequency of at least 55%**, verified by exhaustive enumeration and Monte Carlo simulation.
 
 > New to slot games? Start with the [Slot Game Primer](docs/slot-game-primer.md) ([繁體中文](docs/slot-game-primer.zh-TW.md)).
+
+## TL;DR
+
+- **Answer:** [`configs/reels.json`](configs/reels.json), three reels of 130, 132 and 149 symbols (strips in [Result](#result)).
+- **RTP is exactly 19/20 = 0.95:** computed with fractions over all 2,556,840 stop combinations (20 × N × RTP = 48,579,960 = 19 × 2,556,840), and confirmed by 10⁷ simulated spins (RTP 0.950049 ± 0.000618).
+- **Win rate is 66.0%** (payout > 0), above the 55% target.
+- **Check it yourself:** `python -m slot_reel_designer.verify` runs the exact check and the simulation and exits with code 0 on success. CI runs it, together with the full test suite, on every push.
+- The rules leave open how a full screen is paid; a configuration for the other reading (`full_only`) is also provided. See [Assumptions](#assumptions).
 
 ## Problem
 

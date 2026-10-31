@@ -2,9 +2,19 @@
 
 [English](README.md) | 繁體中文
 
+[![CI](https://github.com/Bruce-0113/slot-reel-designer/actions/workflows/ci.yml/badge.svg)](https://github.com/Bruce-0113/slot-reel-designer/actions/workflows/ci.yml)
+
 為 3×3 slot game 設計 reel strip，使 **RTP 精確等於 0.95**，且 **勝率（hit frequency）不低於 55%**，並以完整窮舉與 Monte Carlo 模擬驗證結果。
 
 > 不熟悉 slot game？請先閱讀 [Slot Game 入門](docs/slot-game-primer.zh-TW.md)。
+
+## 重點摘要
+
+- **答案**：[`configs/reels.json`](configs/reels.json)，三條 reel 的長度分別為 130、132、149（strip 內容見[結果](#結果)）。
+- **RTP 精確等於 19/20 = 0.95**：以分數窮舉全部 2,556,840 種停止位置組合計算（20 × N × RTP = 48,579,960 = 19 × 2,556,840），並以 10⁷ 次模擬確認（RTP 0.950049 ± 0.000618）。
+- **勝率 66.0%**（payout > 0），高於 55% 的目標。
+- **自行驗證**：執行 `python -m slot_reel_designer.verify`，會進行精確驗證與模擬，全部通過時 exit code 為 0。每次 push 時，CI 都會執行它與完整的測試。
+- 題目沒有規定全盤中獎時怎麼計算 payout，因此另外提供另一種解讀（`full_only`）下的配置，見[假設](#假設)。
 
 ## 問題定義
 
