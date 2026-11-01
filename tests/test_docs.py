@@ -1,5 +1,6 @@
 """Tests that the hand-written numbers in the READMEs and the methodology match the code."""
 
+import itertools
 import json
 import math
 import re
@@ -14,7 +15,7 @@ from slot_reel_designer.evaluator import (
     payout_distribution,
     payout_variance,
 )
-from slot_reel_designer.game import MULTIPLIERS, SYMBOLS, PayoutMode
+from slot_reel_designer.game import MULTIPLIERS, SYMBOLS, PayoutMode, pattern_hits
 from slot_reel_designer.search import CONFIG_DIR, CONFIG_PATHS, count_reels, symbol_hit_prob
 from slot_reel_designer.simulate import Z95, simulate
 
@@ -192,6 +193,80 @@ def test_summary_figures(lang, primary_figures):
     lengths = f"{a}, {b} and {c}" if lang == "en" else f"{a}、{b}、{c}"
     for figure in [lengths, *(primary_figures[key] for key in primary_figures if key != "lengths")]:
         assert figure in summary
+
+
+REASONING = {"en": ROOT / "docs" / "reasoning.md", "zh-TW": ROOT / "docs" / "reasoning.zh-TW.md"}
+POC_CONFIG = CONFIG_DIR / "poc_reels.json"
+
+
+def minimal_answer_figures() -> list[str]:
+    """The hand proof of the proof-of-concept config, as the summaries and reasoning pages write it."""
+    reels = json.loads(POC_CONFIG.read_text())["reels"]
+    ev = evaluate(reels, PayoutMode.SUM_ALL)
+    p = ev.pattern_hit_prob
+    blocks = MULTIPLIERS[0] * (p["A"] + p["B"] + p["C"] + p["D"])
+    full = MULTIPLIERS[0] * 5 * p["E"]
+    assert ev.rtp == blocks + full == Fraction(19, 20)
+    assert p["A"] == p["C"] and p["B"] == p["D"]
+    return [
+        f"0.25 × ({p['A']} + {p['B']} + {p['C']} + {p['D']}) + 1.25 × {p['E']} "
+        f"= {float(blocks):.2f} + {float(full):.2f} = 0.95",
+        f"{float(ev.hit_rate):.0%}",
+    ]
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_summary_minimal_answer(lang):
+    """The README summaries show the hand-checkable minimal answer."""
+    summary = section(README[lang].read_text(), SUMMARY[lang][0])
+    reels = json.loads(POC_CONFIG.read_text())["reels"]
+    assert all(f"`{json.dumps(reel, separators=(',', ':'))}`" in summary for reel in reels)
+    assert all(figure in summary for figure in minimal_answer_figures())
+
+
+def max_blocks_without_full_screen() -> int:
+    """The most 2x2 blocks one grid completes without a full screen (two symbols suffice)."""
+    best = 0
+    for cells in itertools.product(range(2), repeat=9):
+        grid = tuple(cells[row * 3 : row * 3 + 3] for row in range(3))
+        hits = pattern_hits(grid)
+        if "E" not in hits:
+            best = max(best, len(hits))
+    return best
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_reasoning_figures(lang, evaluations):
+    """Every figure the reasoning page quotes, in both languages."""
+    text = REASONING[lang].read_text()
+    reels = json.loads(POC_CONFIG.read_text())["reels"]
+    p = evaluate(reels, PayoutMode.SUM_ALL).pattern_hit_prob
+    hit = evaluate(reels, PayoutMode.SUM_ALL).hit_rate
+    # Step 4: the hand proof of the minimal answer.
+    assert all(f"`{reel}`" in text for reel in reels)
+    assert f"P(A) = P(C) = {p['A']}" in text and f"P(B) = P(D) = {p['B']}" in text
+    assert f"= {p['E']}" in text
+    assert f"0.25 × ({p['A']} + {p['B']} + {p['C']} + {p['D']}) + 1.25 × {p['E']}" in text
+    assert f"= {1 - hit}" in text and f"{hit} = {float(hit):.0%}" in text
+    # Step 7: what the requirements force.
+    assert max_blocks_without_full_screen() == 3 and "0.75" in text
+    assert f"{0.95 / 0.70:.2f}" in text and f"{0.95 / 0.55:.2f}" in text
+    assert f"{float(MULTIPLIERS[0] * 5) * 0.70:.3f}" in text  # symbol 0's full_only ceiling
+    ev = evaluations[PayoutMode.SUM_ALL][PayoutMode.SUM_ALL]
+    full_screen = ev.pattern_hit_prob["E"]
+    assert f"{float(full_screen):.1%}" in text
+    assert f"{float(ev.rtp_by_pattern['E'] / ev.rtp):.0%}" in text
+    assert f"{float(ev.rtp_by_symbol[0] / ev.rtp):.0%}" in text
+    assert Fraction(45, 100) < full_screen / ev.hit_rate < Fraction(55, 100)  # "about half"
+    # Step 9: the result table.
+    for mode in PayoutMode:
+        ev = evaluations[mode][mode]
+        n = ev.total_outcomes
+        assert f"{int(20 * ev.rtp * n):,} = 19 × {n:,}" in text
+        assert f"{float(ev.hit_rate):.1%}" in text
+        lengths = [len(r) for r in json.loads(CONFIG_PATHS[mode].read_text())["reels"]]
+        separator = ", " if lang == "en" else "、"
+        assert separator.join(map(str, lengths)) in text
 
 
 @pytest.fixture(scope="module")
