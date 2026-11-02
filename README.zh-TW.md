@@ -10,9 +10,13 @@
 
 ## 重點摘要
 
-- **答案**：[`configs/reels.json`](configs/reels.json)，三條 reel 的長度分別為 130、132、149（strip 內容見[結果](#結果)）。
-- **RTP 精確等於 19/20 = 0.95**：以分數窮舉全部 2,556,840 種停止位置組合計算（20 × N × RTP = 48,579,960 = 19 × 2,556,840），並以 10⁷ 次模擬確認（RTP 0.950049 ± 0.000618）。
-- **勝率 66.0%**（payout > 0），高於 55% 的目標。
+完整的思考過程請見 **[`docs/reasoning.zh-TW.md`](docs/reasoning.zh-TW.md)**。
+
+- **關鍵觀察**：每個中獎型態都包含盤面中心格，而 2×2 型態就是兩個相鄰欄各自的「上下成對」。因此一條 reel 只透過各符號相鄰成對與三連的數量影響結果，與 strip 怎麼排列無關。
+- **最小解（可手算驗證）**：三條 reel 為 `[0,0,0,0,1]`、`[0,0,0]`、`[0,0,0,0,0,0,0,0,1,2]`（[`configs/poc_reels.json`](configs/poc_reels.json)）。在全部 150 種機率相同的結果中，2×2 型態 A、B、C、D 的中獎機率分別為 3/5、7/10、3/5、7/10，全盤為 6/25，因此 RTP = 0.25 × (3/5 + 7/10 + 3/5 + 7/10) + 1.25 × 6/25 = 0.65 + 0.30 = 0.95，勝率 96%。
+- **優化解**：最小解只有符號 0 會中獎，因此加上讓它更像真實遊戲的要求：每種符號與型態都會賠付、倍率越高越難中、勝率維持在 55–70%。結果為 [`configs/reels.json`](configs/reels.json)，三條 reel 的長度分別為 130、132、149（strip 內容見[結果](#結果)）。
+  - **RTP 精確等於 19/20 = 0.95**：以分數窮舉全部 2,556,840 種停止位置組合計算（20 × N × RTP = 48,579,960 = 19 × 2,556,840），並以 10⁷ 次模擬確認（RTP 0.950049 ± 0.000618）。
+  - **勝率 66.0%**（payout > 0），高於 55% 的目標。
 - **自行驗證**：執行 `python -m slot_reel_designer.verify`，會進行精確驗證與模擬，全部通過時 exit code 為 0。每次 push 時，CI 都會執行它與完整的測試。
 - 題目沒有規定全盤中獎時怎麼計算 payout，因此另外提供另一種解讀（`full_only`）下的配置，見[假設](#假設)。
 
@@ -122,14 +126,24 @@ reel 3: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 
 ## 方法
 
+每一步為什麼這樣做，請見 [`docs/reasoning.zh-TW.md`](docs/reasoning.zh-TW.md)；本節列出實際建構的內容。
+
 1. **先做概念驗證**：一組刻意簡化的 reel 家族精確達到 RTP = 19/20，並把整條流程跑過一遍（[`docs/poc.md`](docs/poc.md)，英文）；它的缺點（所有中獎都在符號 0、勝率 96%）促成了上面的設計要求。
 2. **精確評估**：每條 reel 先化簡成各種不同盤面欄位的出現次數，與中間欄組不成 2×2 方塊的外側欄再合併成一個空白欄，因此最多只需計分 125 × 10 × 10 個盤面，就能涵蓋全部 L₁·L₂·L₃ 種停止位置組合。所有運算都使用 `fractions.Fraction`，RTP 是否相等以精確分數判斷，不受浮點誤差影響。
 3. **計數模型**：所有統計結果只取決於每條 reel 的長度，以及每個符號在循環 strip 上的成對數與三連數（每條 reel 16 種狀態、共 4,096 種狀態組合），與 strip 的排列方式無關。20·L₁·L₂·L₃·RTP 必為整數，所以「RTP = 19/20」只是整數運算。
 4. **搜尋配置**：以設定種子的模擬退火（10 次，每次 60,000 步）在連續區段計數上最小化一個依要求優先順序設計的懲罰函數。接著以精確收尾讓 RTP 剛好等於 19/20：固定兩條 reel 時，整數化的 RTP 超出量是第三條 reel 區段計數的仿射函數，因此用中間相遇法列舉，就能找到讓超出量歸零的計數。勝率低於 11/20 的候選會先被剔除，再從中選出最好的一組。
 5. **建構 strip**：把選中的區段計數排列成 strip，使同一符號的連續區段永不相鄰，再以精確評估器重新檢查建好的 strip。
-6. **驗證**：精確窮舉、暴力窮舉交叉驗證、附 95% 信賴區間的 Monte Carlo 模擬，以及 2,530 個測試。
+6. **驗證**：精確窮舉、暴力窮舉交叉驗證、附 95% 信賴區間的 Monte Carlo 模擬，以及超過 2,500 個測試。
 
 詳細說明：[`docs/methodology.zh-TW.md`](docs/methodology.zh-TW.md)
+
+## 開發方式
+
+這個專案是與 AI coding agent（Claude Code）協作完成的；招募團隊已確認可以使用 AI 工具。
+
+- **流程**：由我訂定工作流程。先完成概念驗證並通過驗證，再進行正式開發；程式以測試先行的方式撰寫；工作以小步驟 commit 在 `develop`，驗證通過後才合併進 `main`。之後的修改都透過 CI 必須通過的 pull request 進行。
+- **決策**：由我決定規則未明確之處的解讀（全盤以 `sum_all` 計算，並另外交付 `full_only` 配置），以及最終設計應讓 5 種符號都參與。
+- **驗證**：每個階段都由另外的 agent 只依規則重新實作評估器、review 程式碼，並對測試做 mutation testing；它們找到的問題都在合併前修正。
 
 ## 快速開始
 
@@ -143,12 +157,12 @@ pip install -r requirements.txt
 python -m slot_reel_designer.solve        # 搜尋兩種 payout 模式並重寫 configs/*.json（約 45 秒）
 python -m slot_reel_designer.verify       # 精確驗證（H1–H5）+ 每個設定檔 10^7 次 spin 的 Monte Carlo 模擬
 python -m slot_reel_designer.report       # 重新產生 docs/par-sheet.md 與 docs/par-sheet.zh-TW.md
-pytest                                    # 快速測試：2,523 個，只需幾秒
+pytest                                    # 快速測試：超過 2,500 個，只需幾秒
 pytest -m slow                            # 7 個較慢的檢查：重跑搜尋、暴力窮舉（需要幾分鐘）
 ```
 
 - `solve` 可指定 `--mode sum_all|full_only|both`、`--seed N` 與 `--out-dir DIR`。`--seed N` 會以種子 N、N + 1、…、N + 9 跑 10 次模擬退火，因此相鄰的種子共用其中 9 次，可能得到相同的設定檔。結果取決於種子：已提交的設定檔來自種子 0，而其他種子（例如 100 與 1000）得到的 full_only 配置不滿足 S1。無論種子為何，儲存下來的設定檔都滿足 H1–H5。
-- 使用預設參數時，`solve` 會逐位元組重現已提交的設定檔。同一個種子的搜尋結果是確定的，但模擬退火由浮點數運算（`math.exp`、`math.log`）引導，因此逐位元組重現只在一個環境上檢查過：arm64 的 macOS、Python 3.12.8、numpy 2.5.4。在其他環境上，搜尋可能得到不同的 strip；儲存下來的設定檔仍滿足 H1–H5，`verify` 會精確檢查。
+- 使用預設參數時，`solve` 會逐位元組重現已提交的設定檔。同一個種子的搜尋結果是確定的，但模擬退火由浮點數運算（`math.exp`、`math.log`）引導，因此逐位元組重現只在兩個環境上檢查過：arm64 的 macOS（Python 3.12.8、numpy 2.5.4），以及 CI 上的 Ubuntu（Python 3.12）。在其他環境上，搜尋可能得到不同的 strip；儲存下來的設定檔仍滿足 H1–H5，`verify` 會精確檢查。
 - `verify` 可指定 `--config PATH ...`、`--n SPINS` 與 `--seed N`。若設定檔違反 H1–H5，或模擬結果與精確值相差超過 4 個標準誤，結束代碼為 1。
 - `python -m slot_reel_designer.poc` 會重跑概念驗證的掃描，並儲存 `configs/poc_reels.json`。
 
@@ -158,6 +172,7 @@ pytest -m slow                            # 7 個較慢的檢查：重跑搜尋�
 .
 ├── README.md
 ├── README.zh-TW.md
+├── .github/workflows/ci.yml       # CI：在 Python 3.10/3.12/3.14 上跑測試與 verify，另跑較慢的檢查
 ├── pyproject.toml                 # 專案資訊；pytest 設定與 `slow` 標記
 ├── requirements.txt               # numpy、pytest
 ├── configs/
@@ -169,6 +184,8 @@ pytest -m slow                            # 7 個較慢的檢查：重跑搜尋�
 │   ├── problem.zh-TW.md           # 問題敘述（繁體中文）
 │   ├── slot-game-primer.md        # slot game 機制說明（英文）
 │   ├── slot-game-primer.zh-TW.md  # slot game 機制說明（繁體中文）
+│   ├── reasoning.md               # 思考過程：從規則到答案（英文）
+│   ├── reasoning.zh-TW.md         # 思考過程：從規則到答案（繁體中文）
 │   ├── poc.md                     # 概念驗證（英文）
 │   ├── methodology.md             # 評估器、計數模型、搜尋與驗證（英文）
 │   ├── methodology.zh-TW.md       # 評估器、計數模型、搜尋與驗證（繁體中文）

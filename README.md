@@ -10,9 +10,13 @@ Design slot reel strips for a 3×3 game that achieve an **exact RTP of 0.95** wi
 
 ## TL;DR
 
-- **Answer:** [`configs/reels.json`](configs/reels.json), three reels of 130, 132 and 149 symbols (strips in [Result](#result)).
-- **RTP is exactly 19/20 = 0.95:** computed with fractions over all 2,556,840 stop combinations (20 × N × RTP = 48,579,960 = 19 × 2,556,840), and confirmed by 10⁷ simulated spins (RTP 0.950049 ± 0.000618).
-- **Win rate is 66.0%** (payout > 0), above the 55% target.
+The chain of thought, step by step: **[`docs/reasoning.md`](docs/reasoning.md)**.
+
+- **Key observation:** every pattern contains the centre cell, and a 2×2 block is two vertical pairs side by side. So a reel matters only through how many adjacent pairs and triples of each symbol it has, not through how the strip is arranged.
+- **Minimal answer, checkable by hand:** reels `[0,0,0,0,1]`, `[0,0,0]` and `[0,0,0,0,0,0,0,0,1,2]` ([`configs/poc_reels.json`](configs/poc_reels.json)). Over its 150 equally likely outcomes, the 2×2 blocks A, B, C, D hit with probability 3/5, 7/10, 3/5, 7/10 and the full screen with 6/25, so RTP = 0.25 × (3/5 + 7/10 + 3/5 + 7/10) + 1.25 × 6/25 = 0.65 + 0.30 = 0.95, with a 96% win rate.
+- **Refined answer:** the minimal answer only ever wins on symbol 0, so requirements were added to make it read like a real game: every symbol and pattern pays, higher multipliers win less often, and the win rate stays in 55–70%. Result: [`configs/reels.json`](configs/reels.json), three reels of 130, 132 and 149 symbols (strips in [Result](#result)).
+  - **RTP is exactly 19/20 = 0.95:** computed with fractions over all 2,556,840 stop combinations (20 × N × RTP = 48,579,960 = 19 × 2,556,840), and confirmed by 10⁷ simulated spins (RTP 0.950049 ± 0.000618).
+  - **Win rate is 66.0%** (payout > 0), above the 55% target.
 - **Check it yourself:** `python -m slot_reel_designer.verify` runs the exact check and the simulation and exits with code 0 on success. CI runs it, together with the full test suite, on every push.
 - The rules leave open how a full screen is paid; a configuration for the other reading (`full_only`) is also provided. See [Assumptions](#assumptions).
 
@@ -122,14 +126,24 @@ RTP contribution by symbol and pattern, and the full payout distribution: see [`
 
 ## Approach
 
+Why each step was taken is explained in [`docs/reasoning.md`](docs/reasoning.md); this section lists what was built.
+
 1. **Proof of concept first** — a deliberately simple reel family reaches RTP = 19/20 exactly and exercises the whole pipeline ([`docs/poc.md`](docs/poc.md)); its weaknesses (every win on symbol 0, a 96% win rate) led to the design requirements above.
 2. **Exact evaluator** — every reel reduces to counts of its distinct windows, and outer windows that cannot complete a 2×2 block with the middle one are merged into one blank column, so all L₁·L₂·L₃ stop combinations are covered with at most 125 × 10 × 10 scored grids. All arithmetic uses `fractions.Fraction`, so RTP equality is checked exactly, with no floating-point error.
 3. **Counts model** — every statistic depends only on each reel's length and, per symbol, its cyclic pairs and triples (16 states per reel, 4,096 state combinations), not on how the strip is arranged. 20·L₁·L₂·L₃·RTP is an integer, so "RTP = 19/20" is integer bookkeeping.
 4. **Search** — seeded simulated annealing over run counts (10 runs of 60,000 steps) minimises a penalty that follows the requirements' priorities. An exact finish then makes the RTP exactly 19/20: with two reels fixed, the integer RTP excess is affine in the third reel's run counts, so a meet-in-the-middle enumeration finds the counts that cancel it. Candidates with a hit rate below 11/20 are dropped before the best one is chosen.
 5. **Strip construction** — the chosen run counts are laid out so that runs of one symbol never touch, and the built strips are re-checked with the exact evaluator.
-6. **Verification** — exact enumeration, brute-force cross-checks, Monte Carlo simulation with 95% confidence intervals, and 2,530 tests.
+6. **Verification** — exact enumeration, brute-force cross-checks, Monte Carlo simulation with 95% confidence intervals, and over 2,500 tests.
 
 Details: [`docs/methodology.md`](docs/methodology.md)
+
+## How This Was Built
+
+This project was built with an AI coding agent (Claude Code); the hiring team confirmed that AI tools are allowed.
+
+- **Process:** I set the working process. The proof of concept came first and was verified before the full build, the code was written test-first, and the work was committed in small steps on `develop` and merged into `main` once verified. Later changes go through pull requests that CI must pass.
+- **Decisions:** I chose how to read the open rules (the full screen pays `sum_all`, and a `full_only` configuration is delivered as well) and that the final design should involve all five symbols.
+- **Verification:** at each stage, separate agents re-implemented the evaluator from the rules alone, reviewed the code and mutation-tested the suite, and their findings were fixed before merging.
 
 ## Quick Start
 
@@ -143,12 +157,12 @@ pip install -r requirements.txt
 python -m slot_reel_designer.solve        # search both payout modes and rewrite configs/*.json (about 45 s)
 python -m slot_reel_designer.verify       # exact check (H1–H5) + Monte Carlo with 10^7 spins per config
 python -m slot_reel_designer.report       # regenerate docs/par-sheet.md and docs/par-sheet.zh-TW.md
-pytest                                    # fast suite: 2,523 tests, a few seconds
+pytest                                    # fast suite: over 2,500 tests, a few seconds
 pytest -m slow                            # 7 slow checks: search reruns, brute force (a few minutes)
 ```
 
 - `solve` takes `--mode sum_all|full_only|both`, `--seed N` and `--out-dir DIR`. `--seed N` runs the 10 annealing restarts with seeds N, N + 1, …, N + 9, so neighbouring seeds share 9 of their 10 runs and can end with the same configs. The result depends on the seed: the committed configs come from seed 0, and some other seeds (100 and 1000, for example) give a full_only config that misses S1. Whatever the seed, a saved config meets H1–H5.
-- With the defaults, `solve` reproduces the committed configs byte for byte. The search is deterministic for a seed, but the annealing is steered by floating-point arithmetic (`math.exp`, `math.log`), so byte-for-byte reproduction has been checked on one setup only: macOS on arm64, Python 3.12.8, numpy 2.5.4. Elsewhere the search may end on different strips; any saved config still meets H1–H5, which `verify` checks exactly.
+- With the defaults, `solve` reproduces the committed configs byte for byte. The search is deterministic for a seed, but the annealing is steered by floating-point arithmetic (`math.exp`, `math.log`), so byte-for-byte reproduction has been checked on two setups only: macOS on arm64 (Python 3.12.8, numpy 2.5.4) and Ubuntu in CI (Python 3.12). Elsewhere the search may end on different strips; any saved config still meets H1–H5, which `verify` checks exactly.
 - `verify` takes `--config PATH ...`, `--n SPINS` and `--seed N`. It exits with code 1 if a config breaks H1–H5 or disagrees with the simulation by more than 4 standard errors.
 - `python -m slot_reel_designer.poc` reruns the proof-of-concept scan and saves `configs/poc_reels.json`.
 
@@ -158,6 +172,7 @@ pytest -m slow                            # 7 slow checks: search reruns, brute 
 .
 ├── README.md
 ├── README.zh-TW.md
+├── .github/workflows/ci.yml      # CI: tests + verify on Python 3.10/3.12/3.14, slow checks
 ├── pyproject.toml                # project metadata; pytest settings and the `slow` marker
 ├── requirements.txt              # numpy, pytest
 ├── configs/
@@ -169,6 +184,8 @@ pytest -m slow                            # 7 slow checks: search reruns, brute 
 │   ├── problem.zh-TW.md          # Traditional Chinese version
 │   ├── slot-game-primer.md       # background on slot-game mechanics
 │   ├── slot-game-primer.zh-TW.md # Traditional Chinese version
+│   ├── reasoning.md              # chain of thought: from the rules to the answer
+│   ├── reasoning.zh-TW.md        # Traditional Chinese version
 │   ├── poc.md                    # proof of concept
 │   ├── methodology.md            # evaluator, counts model, search and verification
 │   ├── methodology.zh-TW.md      # Traditional Chinese version
