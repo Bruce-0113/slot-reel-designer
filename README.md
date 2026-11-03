@@ -139,7 +139,7 @@ Details: [`docs/methodology.md`](docs/methodology.md)
 
 ## How This Was Built
 
-This project was built with an AI coding agent (Claude Code); the hiring team confirmed that AI tools are allowed.
+This project was built with an AI coding agent (Claude Code).
 
 - **Process:** I set the working process. The proof of concept came first and was verified before the full build, the code was written test-first, and the work was committed in small steps on `develop` and merged into `main` once verified. Later changes go through pull requests that CI must pass.
 - **Decisions:** I chose how to read the open rules (the full screen pays `sum_all`, and a `full_only` configuration is delivered as well) and that the final design should involve all five symbols.
