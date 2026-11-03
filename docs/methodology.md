@@ -191,7 +191,7 @@ Annealing gets close to 0.95 but rarely exactly on 19/20. The finish starts from
 
 With seed 0 the finish found 9,286 exact candidates in sum_all (chosen penalty 2.6233) and 2 in full_only (chosen penalty 9.2532). The search is deterministic per seed: `python -m slot_reel_designer.solve` with the defaults rewrites both committed configs byte for byte, in about 26 s (sum_all) and 18 s (full_only).
 
-`--seed N` anneals with seeds N to N + 9, so neighbouring seeds share 9 of their 10 runs. The outcome depends on the seed. With so few exact candidates in full_only, S1 holds with seed 0 but not, for example, with seeds 100 or 1000; any config `solve` saves still meets H1–H5. Byte-for-byte reproduction has been checked on one setup only (macOS on arm64, Python 3.12.8, numpy 2.5.4): the annealing is steered by floating-point arithmetic (`fast_stats`, `math.exp`, `math.log`), so another platform may end on different strips, which `verify` would still check exactly.
+`--seed N` anneals with seeds N to N + 9, so neighbouring seeds share 9 of their 10 runs. The outcome depends on the seed. With so few exact candidates in full_only, S1 holds with seed 0 but not, for example, with seeds 100 or 1000; any config `solve` saves still meets H1–H5. Byte-for-byte reproduction has been checked on two setups only (macOS on arm64 with Python 3.12.8 and numpy 2.5.4, and Ubuntu in CI with Python 3.12): the annealing is steered by floating-point arithmetic (`fast_stats`, `math.exp`, `math.log`), so another platform may end on different strips, which `verify` would still check exactly.
 
 ## 6. The two payout modes
 
